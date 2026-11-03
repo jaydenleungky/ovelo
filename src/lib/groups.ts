@@ -38,6 +38,18 @@ export async function getGroup(groupId: string): Promise<Group> {
   return data;
 }
 
+/** The signed-in user's role in a group, or null if not a member. */
+export async function getMyRole(groupId: string, userId: string): Promise<Role | null> {
+  const { data, error } = await supabase
+    .from('group_members')
+    .select('role')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .maybeSingle<{ role: Role }>();
+  if (error) throw error;
+  return data?.role ?? null;
+}
+
 /** Members of a group with their display names, admins first. */
 export async function listMembers(groupId: string): Promise<Member[]> {
   const { data: members, error } = await supabase

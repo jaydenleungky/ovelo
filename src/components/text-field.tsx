@@ -5,17 +5,18 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type TextFieldProps = TextInputProps & {
-  label: string;
+  /** Shown above the input. Leave out for compact inputs and set accessibilityLabel. */
+  label?: string;
 };
 
-export function TextField({ label, style, ...inputProps }: TextFieldProps) {
+export function TextField({ label, style, accessibilityLabel, ...inputProps }: TextFieldProps) {
   const theme = useTheme();
 
   return (
     <View style={styles.container}>
-      <ThemedText type="smallBold">{label}</ThemedText>
+      {label && <ThemedText type="smallBold">{label}</ThemedText>}
       <TextInput
-        accessibilityLabel={label}
+        accessibilityLabel={accessibilityLabel ?? label}
         placeholderTextColor={theme.textSecondary}
         style={[
           styles.input,

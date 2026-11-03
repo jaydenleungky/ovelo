@@ -1,6 +1,14 @@
-import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Link, router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
@@ -16,6 +24,19 @@ import {
   type Group,
   type Member,
 } from '@/lib/groups';
+import { listPages, type PageSummary } from '@/lib/pages';
+
+const TEMPLATE_EMOJI: Record<PageSummary['template'], string> = {
+  meal_plan: '🍽️',
+  roster: '🎵',
+  blank: '✏️',
+};
+
+const COLUMN_MODE_LABEL: Record<PageSummary['column_mode'], string> = {
+  weekdays: 'Weekly',
+  dates: 'By date',
+  custom: 'Custom columns',
+};
 
 export default function GroupScreen() {
   const theme = useTheme();
@@ -24,6 +45,7 @@ export default function GroupScreen() {
   const userId = session?.user.id;
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [pages, setPages] = useState<PageSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,11 +53,12 @@ export default function GroupScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      Promise.all([getGroup(id), listMembers(id)])
-        .then(([g, m]) => {
+      Promise.all([getGroup(id), listMembers(id), listPages(id)])
+        .then(([g, m, p]) => {
           if (!active) return;
           setGroup(g);
           setMembers(m);
+          setPages(p);
           setError(null);
         })
         .catch((e: Error) => active && setError(e.message));
@@ -117,6 +140,41 @@ export default function GroupScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.scroll}>
         <View style={styles.content}>
+          <View style={styles.section}>
+            <ThemedText type="smallBold">Pages</ThemedText>
+            {pages.length === 0 && (
+              <ThemedView type="backgroundElement" style={styles.card}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {me?.role === 'admin'
+                    ? 'No pages yet. Create a meal plan or roster to get started.'
+                    : 'No pages yet. An admin can create a meal plan or roster.'}
+                </ThemedText>
+              </ThemedView>
+            )}
+            {pages.map((page) => (
+              <Link key={page.id} href={`/pages/${page.id}`} asChild>
+                <Pressable style={({ pressed }) => pressed && styles.pressed}>
+                  <ThemedView type="backgroundElement" style={styles.pageRow}>
+                    <ThemedText style={styles.pageEmoji}>{TEMPLATE_EMOJI[page.template]}</ThemedText>
+                    <View style={styles.pageText}>
+                      <ThemedText type="smallBold">{page.title}</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {COLUMN_MODE_LABEL[page.column_mode]}
+                      </ThemedText>
+                    </View>
+                    <ThemedText themeColor="textSecondary">›</ThemedText>
+                  </ThemedView>
+                </Pressable>
+              </Link>
+            ))}
+            {me?.role === 'admin' && (
+              <Button
+                title="New page"
+                onPress={() => router.push({ pathname: '/pages/new', params: { groupId: group.id } })}
+              />
+            )}
+          </View>
+
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="smallBold">Invite code</ThemedText>
             <ThemedText style={styles.code} selectable accessibilityLabel={`Invite code ${group.invite_code.split('').join(' ')}`}>
@@ -150,13 +208,6 @@ export default function GroupScreen() {
               ))}
             </ThemedView>
           </View>
-
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="smallBold">Pages</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              Meal plans and rosters for this group will appear here. Coming next!
-            </ThemedText>
-          </ThemedView>
 
           <Button
             title={isLastMember ? 'Delete group' : 'Leave group'}
@@ -217,5 +268,23 @@ const styles = StyleSheet.create({
   },
   memberName: {
     flex: 1,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  pageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+  },
+  pageEmoji: {
+    fontSize: 24,
+    lineHeight: 32,
+  },
+  pageText: {
+    flex: 1,
+    gap: Spacing.half,
   },
 });
