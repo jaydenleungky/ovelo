@@ -19,23 +19,30 @@ The same model covers both motivating use cases:
 
 ## Data model (Supabase / Postgres)
 
-- **groups**: `id`, `name`, `invite_code`
+The schema lives in `supabase/migrations/`.
+
+- **profiles**: `id` (= auth user), `display_name`; created on sign-up
+- **groups**: `id`, `name`, `invite_code`, `created_by`
 - **group_members**: `group_id`, `user_id`, `role` (`admin` | `member`)
-- **profiles**: `id` (= auth user), `display_name`
 - **pages**: `id`, `group_id`, `title`, `instructions`, `column_mode`
   (`weekdays` | `dates`), `template` (`meal_plan` | `roster` | `blank`)
 - **page_columns**: `id`, `page_id`, `position`, `label`, `date` (nullable)
-- **page_options**: `id`, `page_id`, `value` (e.g. `Y`), `label`, `colour`
-- **sections**: `id`, `page_id`, `position`, `title`, `cell_type`
-  (`option` | `text`), so "Car Use" can hold free text such as "Dad 2–5pm"
-- **rows**: `id`, `section_id`, `position`, `label`, `user_id` (nullable,
-  links a row to a member), `is_done`
-- **cells**: `row_id`, `column_id`, `value`, `updated_by`, `updated_at`
-  (primary key `row_id, column_id`)
+- **page_options**: `id`, `page_id`, `position`, `value` (e.g. `Y`), `label`, `colour`
+- **page_sections**: `id`, `page_id`, `position`, `title`, `cell_type`
+  (`option` | `text`, so "Car Use" can hold free text such as "Dad 2–5pm"), `notify`
+- **page_rows**: `id`, `page_id`, `section_id`, `position`, `label`,
+  `user_id` (nullable, links a row to a member), `is_done`
+- **cells**: `page_id`, `row_id`, `column_id`, `value`, `updated_by`,
+  `updated_at` (primary key `row_id, column_id`)
 
-Row Level Security: a user can read and write a page's data only if they are
-in `group_members` for that page's group. Only admins can change page
-structure (columns, sections, rows, options).
+Child tables carry `page_id`, with composite foreign keys so a row, column and
+cell can never point at different pages.
+
+Row Level Security: a user can read a page's data only if they are in
+`group_members` for that page's group. Any member can fill in cells; only
+admins can change page layout (columns, sections, rows, options). Members can
+mark their own row as done. Groups are created and joined through the
+`create_group(name)` and `join_group(code)` functions.
 
 ## Real time and notifications
 
