@@ -1,4 +1,5 @@
 import * as Device from 'expo-device';
+import { useEffect, useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { checkSupabaseConnection } from '@/lib/supabase';
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -29,13 +31,22 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
+  const [connected, setConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    checkSupabaseConnection().then(setConnected);
+  }, []);
+
+  const connectionLabel =
+    connected === null ? 'checking…' : connected ? 'connected ✅' : 'not connected ❌';
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.heroSection}>
           <AnimatedIcon />
           <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
+            Welcome to&nbsp;Ovelo
           </ThemedText>
         </ThemedView>
 
@@ -48,6 +59,7 @@ export default function HomeScreen() {
             title="Try editing"
             hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
           />
+          <HintRow title="Supabase" hint={<ThemedText type="small">{connectionLabel}</ThemedText>} />
           <HintRow title="Dev tools" hint={getDevMenuHint()} />
           <HintRow
             title="Fresh start"
