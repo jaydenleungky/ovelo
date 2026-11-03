@@ -25,7 +25,8 @@ The schema lives in `supabase/migrations/`.
 - **groups**: `id`, `name`, `invite_code`, `created_by`
 - **group_members**: `group_id`, `user_id`, `role` (`admin` | `member`)
 - **pages**: `id`, `group_id`, `title`, `instructions`, `column_mode`
-  (`weekdays` | `dates`), `template` (`meal_plan` | `roster` | `blank`)
+  (`weekdays` | `dates` | `custom`), `template` (`meal_plan` | `roster` |
+  `blank`, where `blank` is a page designed from scratch in the page builder)
 - **page_columns**: `id`, `page_id`, `position`, `label`, `date` (nullable)
 - **page_options**: `id`, `page_id`, `position`, `value` (e.g. `Y`), `label`, `colour`
 - **page_sections**: `id`, `page_id`, `position`, `title`, `cell_type`
