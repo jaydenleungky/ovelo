@@ -11,10 +11,15 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
-import type { Column, Option, PageData, Row } from '@/lib/pages';
-import { formatColumnDate, toDateString, weekdayIndex } from '@/lib/templates';
+import type { Column, Option, PageData, Row, Section } from '@/lib/pages';
+import {
+  COLOURS,
+  ON_CHOICE_COLOUR,
+  formatColumnDate,
+  toDateString,
+  weekdayIndex,
+} from '@/lib/templates';
 
 const NAME_WIDTH = 136;
 const COLUMN_WIDTH = 64;
@@ -111,11 +116,20 @@ type BodyProps = {
   canEditLayout: boolean;
   onBodyScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onAddRow: (sectionId: string, sectionTitle: string) => void;
+  onCellPress: (row: Row, column: Column, section: Section) => void;
+  onCellLongPress: (row: Row, column: Column, section: Section) => void;
 };
 
-export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onAddRow }: BodyProps) {
+export function GridBody({
+  data,
+  currentUserId,
+  canEditLayout,
+  onBodyScroll,
+  onAddRow,
+  onCellPress,
+  onCellLongPress,
+}: BodyProps) {
   const theme = useTheme();
-  const scheme = useColorScheme();
   const today = new Date();
 
   const optionsByValue = new Map(data.options.map((o) => [o.value, o]));
@@ -126,19 +140,20 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
   }
   const todayColumnId = data.columns.find((c) => isToday(c, data.page.column_mode, today))?.id;
   const width = columnWidth(data.page.column_mode);
-  // Option colours as a soft tint behind the letter.
-  const tintAlpha = scheme === 'dark' ? '40' : '26';
   const line = { borderColor: theme.border };
 
+  // A solid tile filling the cell, with a thin gap so neighbours stay separate.
   function renderOptionCell(option: Option | undefined, value: string) {
     if (!value) return null;
     return (
       <View
         style={[
-          styles.optionPill,
-          { backgroundColor: option ? option.colour + tintAlpha : theme.backgroundSelected },
+          styles.choiceTile,
+          { backgroundColor: option?.colour ?? theme.backgroundSelected },
         ]}>
-        <ThemedText type="smallBold" style={{ color: option?.colour ?? theme.text }}>
+        <ThemedText
+          type="smallBold"
+          style={{ color: option ? ON_CHOICE_COLOUR : theme.text }}>
           {value}
         </ThemedText>
       </View>
@@ -182,8 +197,8 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
             style={styles.nameText}>
             {row.label}
           </ThemedText>
-          {row.is_done && (
-            <ThemedText type="smallBold" style={{ color: '#16A34A' }} accessibilityLabel="done">
+          {data.page.track_done && row.is_done && (
+            <ThemedText type="smallBold" style={{ color: COLOURS.green }} accessibilityLabel="done">
               ✓
             </ThemedText>
           )}
@@ -194,14 +209,18 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
           {data.columns.map((column) => {
             const value = cellValues.get(`${row.id}:${column.id}`) ?? '';
             return (
-              <View
+              <Pressable
                 key={column.id}
+                accessibilityRole="button"
                 accessibilityLabel={`${row.label}, ${column.label}: ${value || 'blank'}`}
-                style={[
+                onPress={() => onCellPress(row, column, section)}
+                onLongPress={() => onCellLongPress(row, column, section)}
+                style={({ pressed }) => [
                   styles.cell,
                   { width },
                   line,
                   column.id === todayColumnId && { backgroundColor: theme.backgroundElement },
+                  pressed && { backgroundColor: theme.backgroundSelected },
                 ]}>
                 {section.cell_type === 'option' ? (
                   renderOptionCell(optionsByValue.get(value), value)
@@ -210,7 +229,7 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
                     {value}
                   </ThemedText>
                 )}
-              </View>
+              </Pressable>
             );
           })}
         </View>,
@@ -270,15 +289,13 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
 /** The colour key, e.g. "Y Prefer · N Not available". */
 export function Legend({ options, blankLabel }: { options: Option[]; blankLabel?: string }) {
   const theme = useTheme();
-  const scheme = useColorScheme();
-  const tintAlpha = scheme === 'dark' ? '40' : '26';
 
   return (
     <View style={styles.legend}>
       {options.map((option) => (
         <View key={option.id} style={styles.legendItem}>
-          <View style={[styles.optionPill, { backgroundColor: option.colour + tintAlpha }]}>
-            <ThemedText type="smallBold" style={{ color: option.colour }}>
+          <View style={[styles.legendTile, { backgroundColor: option.colour }]}>
+            <ThemedText type="smallBold" style={{ color: ON_CHOICE_COLOUR }}>
               {option.value}
             </ThemedText>
           </View>
@@ -287,7 +304,7 @@ export function Legend({ options, blankLabel }: { options: Option[]; blankLabel?
       ))}
       {blankLabel && (
         <View style={styles.legendItem}>
-          <View style={[styles.optionPill, { borderWidth: 1, borderColor: theme.border }]} />
+          <View style={[styles.legendTile, { borderWidth: 1, borderColor: theme.border }]} />
           <ThemedText type="small">{blankLabel}</ThemedText>
         </View>
       )}
@@ -362,10 +379,20 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     textAlign: 'center',
   },
-  optionPill: {
+  choiceTile: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    bottom: 3,
+    left: 3,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legendTile: {
     minWidth: 32,
     height: 28,
-    borderRadius: 14,
+    borderRadius: 6,
     paddingHorizontal: Spacing.two,
     alignItems: 'center',
     justifyContent: 'center',

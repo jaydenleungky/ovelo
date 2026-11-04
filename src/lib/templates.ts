@@ -22,6 +22,8 @@ export type TemplateSpec = {
   columns: ColumnSpec[];
   options: OptionSpec[];
   sections: SectionSpec[];
+  /** Show the "I'm done" button so people can tick themselves off. */
+  trackDone: boolean;
 };
 
 /** How a page's columns are chosen in the page builder. */
@@ -37,14 +39,19 @@ const MONTHS_LONG = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+// Each is dark enough for white letters (about 5:1 contrast or better),
+// since choices are drawn as solid tiles in light and dark mode.
 export const COLOURS = {
-  green: '#16A34A',
+  green: '#15803D',
   red: '#DC2626',
-  amber: '#D97706',
+  amber: '#B45309',
   blue: '#2563EB',
   purple: '#9333EA',
   grey: '#6B7280',
 };
+
+/** Letter colour on top of a choice colour. */
+export const ON_CHOICE_COLOUR = '#ffffff';
 
 /** Colours offered in the legend editor, in the order tapping cycles through. */
 export const PALETTE = Object.values(COLOURS);
@@ -156,6 +163,7 @@ export type Meal = (typeof MEALS)[number];
 export function mealPlanTemplate(meals: Meal[], includeCarUse: boolean): TemplateSpec {
   return {
     template: 'meal_plan',
+    trackDone: false,
     ...buildColumns({ kind: 'weekdays' }),
     instructions: 'Y = eating at home, N = not eating at home.',
     options: [
@@ -193,6 +201,7 @@ export function rosterTemplate(
 ): TemplateSpec {
   return {
     template: 'roster',
+    trackDone: false,
     ...buildColumns({ kind: 'dates', year, month, weekdays }),
     instructions:
       "Y = I'd prefer to serve on this date\nN = I'm not available\nLeave blank if you're available.",
@@ -222,6 +231,7 @@ export function customTemplate(draft: CustomDraft): TemplateSpec {
   const usesChoices = draft.sections.some((s) => s.cellType === 'option');
   return {
     template: 'blank',
+    trackDone: false,
     ...buildColumns(draft.columns),
     instructions: draft.instructions.trim(),
     // Drop half-filled legend entries; skip the legend if nothing uses it.

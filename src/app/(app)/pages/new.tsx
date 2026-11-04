@@ -86,6 +86,7 @@ export default function NewPageScreen() {
     instructions: '',
   });
 
+  const [trackDone, setTrackDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,7 +119,10 @@ export default function NewPageScreen() {
 
     setSubmitting(true);
     try {
-      const pageId = await createPageFromTemplate(groupId, title.trim() || defaultTitle, spec);
+      const pageId = await createPageFromTemplate(groupId, title.trim() || defaultTitle, {
+        ...spec,
+        trackDone,
+      });
       router.replace(`/pages/${pageId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the page.');
@@ -244,6 +248,21 @@ export default function NewPageScreen() {
             />
           </>
         )}
+
+        <ThemedView type="backgroundElement" style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <ThemedText type="smallBold">“I’m done” button</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Let people tick themselves off once they’ve filled in their rows. Handy for
+              rosters where you’re waiting on everyone.
+            </ThemedText>
+          </View>
+          <Switch
+            value={trackDone}
+            onValueChange={setTrackDone}
+            accessibilityLabel="I'm done button"
+          />
+        </ThemedView>
 
         <ThemedText type="small" themeColor="textSecondary" style={styles.summary}>
           {summary}

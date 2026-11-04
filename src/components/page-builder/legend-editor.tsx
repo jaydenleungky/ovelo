@@ -4,10 +4,10 @@ import { Chip } from '@/components/chip';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import {
   MAX_OPTION_VALUE_LENGTH,
+  ON_CHOICE_COLOUR,
   OPTION_PRESETS,
   PALETTE,
   nextColour,
@@ -26,8 +26,6 @@ function sameOptions(a: OptionSpec[], b: OptionSpec[]) {
 /** Edit the choices people can pick in a cell: a short code, a meaning and a colour. */
 export function LegendEditor({ options, onChange }: LegendEditorProps) {
   const theme = useTheme();
-  const scheme = useColorScheme();
-  const tintAlpha = scheme === 'dark' ? '40' : '26';
 
   function update(index: number, patch: Partial<OptionSpec>) {
     onChange(options.map((o, i) => (i === index ? { ...o, ...patch } : o)));
@@ -64,8 +62,8 @@ export function LegendEditor({ options, onChange }: LegendEditorProps) {
             accessibilityRole="button"
             accessibilityLabel={`Change colour of ${option.label || `choice ${index + 1}`}`}
             onPress={() => update(index, { colour: nextColour(option.colour) })}
-            style={[styles.swatch, { backgroundColor: option.colour + tintAlpha, borderColor: option.colour }]}>
-            <ThemedText type="smallBold" style={{ color: option.colour }}>
+            style={[styles.swatch, { backgroundColor: option.colour }]}>
+            <ThemedText type="smallBold" style={{ color: ON_CHOICE_COLOUR }}>
               {option.value || '·'}
             </ThemedText>
           </Pressable>
@@ -128,8 +126,7 @@ const styles = StyleSheet.create({
   swatch: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

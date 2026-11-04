@@ -10,7 +10,7 @@ export type PageSummary = {
   created_at: string;
 };
 
-export type Page = PageSummary & { group_id: string; instructions: string };
+export type Page = PageSummary & { group_id: string; instructions: string; track_done: boolean };
 export type Column = { id: string; position: number; label: string; date: string | null };
 export type Option = { id: string; position: number; value: string; label: string; colour: string };
 export type Section = {
@@ -65,7 +65,7 @@ export async function getPageData(pageId: string): Promise<PageData> {
   const [page, columns, options, sections, rows, cells] = await Promise.all([
     supabase
       .from('pages')
-      .select('id, group_id, title, instructions, template, column_mode, created_at')
+      .select('id, group_id, title, instructions, template, column_mode, track_done, created_at')
       .eq('id', pageId)
       .single<Page>(),
     byPage<Column>('page_columns', 'id, position, label, date', 'position'),
@@ -103,6 +103,7 @@ export async function createPageFromTemplate(
         instructions: spec.instructions,
         template: spec.template,
         column_mode: spec.columnMode,
+        track_done: spec.trackDone,
       })
       .select('id')
       .single<{ id: string }>(),
@@ -196,4 +197,30 @@ export async function addRows(
 
 export async function deletePage(pageId: string) {
   check(await supabase.from('pages').delete().eq('id', pageId));
+}
+
+/** Saves one cell. An empty value clears it. */
+export async function setCell(pageId: string, rowId: string, columnId: string, value: string) {
+  if (value === '') {
+    check(await supabase.from('cells').delete().eq('row_id', rowId).eq('column_id', columnId));
+    return;
+  }
+  check(
+    await supabase
+      .from('cells')
+      .upsert(
+        { page_id: pageId, row_id: rowId, column_id: columnId, value },
+        { onConflict: 'row_id,column_id' },
+      ),
+  );
+}
+
+/** Marks rows as done (or not), e.g. "I've filled in my availability". */
+export async function setRowsDone(rowIds: string[], isDone: boolean) {
+  check(await supabase.from('page_rows').update({ is_done: isDone }).in('id', rowIds));
+}
+
+/** Turns the page's "I'm done" button on or off. Admins only. */
+export async function setPageTrackDone(pageId: string, trackDone: boolean) {
+  check(await supabase.from('pages').update({ track_done: trackDone }).eq('id', pageId));
 }
