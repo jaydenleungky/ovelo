@@ -1,5 +1,6 @@
-import { Fragment, useCallback, useRef } from 'react';
+import { Fragment, useCallback, useRef, useState } from 'react';
 import {
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,13 +9,18 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance,
 } from 'react-native';
+import {
+  GestureDetector,
+  useExclusiveGestures,
+  usePanGesture,
+  useTapGesture,
+} from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Column, Option, PageData, Row, Section } from '@/lib/pages';
 import {
-  COLOURS,
   ON_CHOICE_COLOUR,
   formatColumnDate,
   toDateString,
@@ -29,6 +35,8 @@ const CUSTOM_COLUMN_WIDTH = 88;
 const HEADER_HEIGHT = 52;
 const SECTION_HEIGHT = 36;
 const ROW_HEIGHT = 44;
+// How long to hold a name before it can be dragged.
+const DRAG_DELAY_MS = 300;
 
 function columnWidth(columnMode: PageData['page']['column_mode']) {
   return columnMode === 'custom' ? CUSTOM_COLUMN_WIDTH : COLUMN_WIDTH;
@@ -110,12 +118,128 @@ export function GridHeader({ data, headerRef }: HeaderProps) {
   );
 }
 
+type NameCellProps = {
+  row: Row;
+  isMine: boolean;
+  enabled: boolean;
+  /** This name is being dragged. */
+  dragging: boolean;
+  /** How far to move aside while another name is dragged past. */
+  shift: number;
+  onPress: () => void;
+  onDragStart: () => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: (drop: boolean) => void;
+};
+
+/** A person's name: tap to rename, or hold and slide up or down to reorder. */
+function NameCell({
+  row,
+  isMine,
+  enabled,
+  dragging,
+  shift,
+  onPress,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: NameCellProps) {
+  const theme = useTheme();
+  const [offset] = useState(() => new Animated.Value(0));
+
+  const pan = usePanGesture({
+    enabled,
+    runOnJS: true,
+    activateAfterLongPress: DRAG_DELAY_MS,
+    onActivate: () => {
+      offset.setValue(0);
+      onDragStart();
+    },
+    onUpdate: (e) => {
+      offset.setValue(e.translationY);
+      onDragMove(e.translationY);
+    },
+    onDeactivate: (e) => {
+      offset.setValue(0);
+      onDragEnd(!e.canceled);
+    },
+  });
+  const tap = useTapGesture({ enabled, runOnJS: true, onActivate: onPress });
+  const gesture = useExclusiveGestures(pan, tap);
+
+  return (
+    <GestureDetector gesture={gesture} userSelect="none">
+      <Animated.View
+        accessibilityRole={enabled ? 'button' : undefined}
+        accessibilityLabel={enabled ? `${row.label}. Tap to rename, hold to move.` : row.label}
+        style={[
+          styles.nameCell,
+          styles.rowCell,
+          { borderColor: theme.border },
+          dragging && [styles.dragging, { backgroundColor: theme.backgroundSelected }],
+          { transform: [{ translateY: dragging ? offset : shift }] },
+        ]}>
+        <ThemedText type={isMine ? 'smallBold' : 'small'} numberOfLines={1} style={styles.nameText}>
+          {row.label}
+        </ThemedText>
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+/** A section's title down the side; tap it to choose who's in it (admins can rename it too). */
+function SectionTitle({
+  title,
+  enabled,
+  onPress,
+}: {
+  title: string;
+  enabled: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  // A gesture-handler tap, like the names below it, so the two don't compete.
+  const tap = useTapGesture({ enabled, runOnJS: true, onActivate: onPress });
+
+  return (
+    <GestureDetector gesture={tap} userSelect="none">
+      <View
+        accessibilityRole={enabled ? 'button' : 'header'}
+        accessibilityLabel={enabled ? `${title}. Tap to choose who's in it.` : title}
+        style={[
+          styles.nameCell,
+          styles.sectionCell,
+          { borderColor: theme.border, backgroundColor: theme.backgroundSelected },
+        ]}>
+        <ThemedText type="smallBold" numberOfLines={1} style={styles.nameText}>
+          {title}
+        </ThemedText>
+      </View>
+    </GestureDetector>
+  );
+}
+
+type Drag = { sectionId: string; from: number; to: number };
+
+/** How far a name moves aside so the dragged one can drop into its place. */
+function shiftFor(drag: Drag | null, sectionId: string, index: number) {
+  if (!drag || drag.sectionId !== sectionId || index === drag.from) return 0;
+  if (drag.from < drag.to && index > drag.from && index <= drag.to) return -ROW_HEIGHT;
+  if (drag.from > drag.to && index >= drag.to && index < drag.from) return ROW_HEIGHT;
+  return 0;
+}
+
 type BodyProps = {
   data: PageData;
   currentUserId: string | undefined;
   canEditLayout: boolean;
   onBodyScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  onAddRow: (sectionId: string, sectionTitle: string) => void;
+  onRowPress: (row: Row, section: Section) => void;
+  onSectionPress: (section: Section) => void;
+  /** New order of a section's rows, top to bottom. */
+  onReorderRows: (rowIds: string[]) => void;
+  /** A name is being dragged, so the page shouldn't scroll. */
+  onDragChange: (active: boolean) => void;
   onCellPress: (row: Row, column: Column, section: Section) => void;
   onCellLongPress: (row: Row, column: Column, section: Section) => void;
 };
@@ -125,12 +249,22 @@ export function GridBody({
   currentUserId,
   canEditLayout,
   onBodyScroll,
-  onAddRow,
+  onRowPress,
+  onSectionPress,
+  onReorderRows,
+  onDragChange,
   onCellPress,
   onCellLongPress,
 }: BodyProps) {
   const theme = useTheme();
   const today = new Date();
+  const [drag, setDrag] = useState<Drag | null>(null);
+  // The same drag, readable straight away inside gesture callbacks.
+  const dragRef = useRef<Drag | null>(null);
+  function updateDrag(next: Drag | null) {
+    dragRef.current = next;
+    setDrag(next);
+  }
 
   const optionsByValue = new Map(data.options.map((o) => [o.value, o]));
   const cellValues = new Map(data.cells.map((c) => [`${c.row_id}:${c.column_id}`, c.value]));
@@ -167,13 +301,13 @@ export function GridBody({
     const rows = rowsBySection.get(section.id) ?? [];
 
     left.push(
-      <View
+      <SectionTitle
         key={`s-${section.id}`}
-        style={[styles.nameCell, styles.sectionCell, line, { backgroundColor: theme.backgroundSelected }]}>
-        <ThemedText type="smallBold" numberOfLines={1}>
-          {section.title}
-        </ThemedText>
-      </View>,
+        title={section.title}
+        // Admins rename and choose people; others add or remove themselves.
+        enabled={canEditLayout || section.auto_members}
+        onPress={() => onSectionPress(section)}
+      />,
     );
     right.push(
       <View
@@ -186,23 +320,37 @@ export function GridBody({
       />,
     );
 
-    for (const row of rows) {
-      const isMine = !!currentUserId && row.user_id === currentUserId;
+    rows.forEach((row, index) => {
       left.push(
-        <View key={row.id} style={[styles.nameCell, styles.rowCell, line]}>
-          {isMine && <View style={[styles.meDot, { backgroundColor: theme.tint }]} />}
-          <ThemedText
-            type={isMine ? 'smallBold' : 'small'}
-            numberOfLines={1}
-            style={styles.nameText}>
-            {row.label}
-          </ThemedText>
-          {data.page.track_done && row.is_done && (
-            <ThemedText type="smallBold" style={{ color: COLOURS.green }} accessibilityLabel="done">
-              ✓
-            </ThemedText>
-          )}
-        </View>,
+        <NameCell
+          key={row.id}
+          row={row}
+          isMine={!!currentUserId && row.user_id === currentUserId}
+          enabled={canEditLayout}
+          dragging={drag?.sectionId === section.id && drag.from === index}
+          shift={shiftFor(drag, section.id, index)}
+          onPress={() => onRowPress(row, section)}
+          onDragStart={() => {
+            updateDrag({ sectionId: section.id, from: index, to: index });
+            onDragChange(true);
+          }}
+          onDragMove={(dy) => {
+            const current = dragRef.current;
+            const to = Math.max(0, Math.min(rows.length - 1, index + Math.round(dy / ROW_HEIGHT)));
+            if (current && current.to !== to) updateDrag({ ...current, to });
+          }}
+          onDragEnd={(drop) => {
+            const done = dragRef.current;
+            updateDrag(null);
+            onDragChange(false);
+            if (drop && done && done.to !== done.from) {
+              const ids = rows.map((r) => r.id);
+              const [moved] = ids.splice(done.from, 1);
+              ids.splice(done.to, 0, moved);
+              onReorderRows(ids);
+            }
+          }}
+        />,
       );
       right.push(
         <View key={row.id} style={styles.cellRow}>
@@ -234,9 +382,9 @@ export function GridBody({
           })}
         </View>,
       );
-    }
+    });
 
-    if (rows.length === 0 && !canEditLayout) {
+    if (rows.length === 0) {
       left.push(
         <View key={`e-${section.id}`} style={[styles.nameCell, styles.rowCell, line]}>
           <ThemedText type="small" themeColor="textSecondary">
@@ -247,21 +395,6 @@ export function GridBody({
       right.push(<View key={`e-${section.id}`} style={[styles.rowCell, line, { width: data.columns.length * width }]} />);
     }
 
-    if (canEditLayout) {
-      left.push(
-        <Pressable
-          key={`a-${section.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={`Add person to ${section.title}`}
-          onPress={() => onAddRow(section.id, section.title)}
-          style={({ pressed }) => [styles.nameCell, styles.rowCell, line, pressed && styles.pressed]}>
-          <ThemedText type="small" style={{ color: theme.tint }}>
-            + Add person
-          </ThemedText>
-        </Pressable>,
-      );
-      right.push(<View key={`a-${section.id}`} style={[styles.rowCell, line, { width: data.columns.length * width }]} />);
-    }
   }
 
   return (
@@ -287,9 +420,7 @@ export function GridBody({
 }
 
 /** The colour key, e.g. "Y Prefer · N Not available". */
-export function Legend({ options, blankLabel }: { options: Option[]; blankLabel?: string }) {
-  const theme = useTheme();
-
+export function Legend({ options }: { options: Option[] }) {
   return (
     <View style={styles.legend}>
       {options.map((option) => (
@@ -302,12 +433,6 @@ export function Legend({ options, blankLabel }: { options: Option[]; blankLabel?
           <ThemedText type="small">{option.label}</ThemedText>
         </View>
       ))}
-      {blankLabel && (
-        <View style={styles.legendItem}>
-          <View style={[styles.legendTile, { borderWidth: 1, borderColor: theme.border }]} />
-          <ThemedText type="small">{blankLabel}</ThemedText>
-        </View>
-      )}
     </View>
   );
 }
@@ -397,10 +522,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  meDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  dragging: {
+    zIndex: 1,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   pressed: {
     opacity: 0.6,

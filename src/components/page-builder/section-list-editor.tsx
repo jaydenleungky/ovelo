@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { SegmentedControl } from '@/components/segmented-control';
 import { TextField } from '@/components/text-field';
@@ -20,7 +20,7 @@ export const NEW_SECTION: SectionSpec = {
   rows: 'members',
 };
 
-/** Edit each section's name, entry type and who is in it. */
+/** Edit each section's name and entry type. Everyone in the group gets a row in each. */
 export function SectionListEditor({ sections, onChange }: SectionListEditorProps) {
   const theme = useTheme();
 
@@ -32,7 +32,8 @@ export function SectionListEditor({ sections, onChange }: SectionListEditorProps
     <View style={styles.container}>
       <ThemedText type="smallBold">Sections</ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
-        Groups of rows down the side. Choose what kind of entry goes in each one.
+        Groups of rows down the side, with everyone in the group in each. Choose what kind of
+        entry goes in each one.
       </ThemedText>
 
       {sections.map((section, index) => (
@@ -73,16 +74,6 @@ export function SectionListEditor({ sections, onChange }: SectionListEditorProps
               : 'Type anything in a cell, e.g. “Dad 2–5pm”.'}
           </ThemedText>
 
-          <View style={styles.switchRow}>
-            <ThemedText type="small" style={styles.switchLabel}>
-              Add everyone in the group
-            </ThemedText>
-            <Switch
-              accessibilityLabel={`Add everyone in the group to ${section.title || `section ${index + 1}`}`}
-              value={section.rows === 'members'}
-              onValueChange={(on) => update(index, { rows: on ? 'members' : [] })}
-            />
-          </View>
         </ThemedView>
       ))}
 
@@ -118,14 +109,6 @@ const styles = StyleSheet.create({
   remove: {
     fontSize: 22,
     paddingHorizontal: Spacing.one,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  switchLabel: {
-    flex: 1,
   },
   addLink: {
     paddingVertical: Spacing.two,

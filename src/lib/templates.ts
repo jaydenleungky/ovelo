@@ -9,7 +9,10 @@ export type SectionSpec = {
   title: string;
   cellType: CellType;
   notify: boolean;
-  /** 'members' adds one row per group member; otherwise these fixed labels. */
+  /**
+   * 'members' keeps one row per group member, added and removed as people
+   * join and leave; otherwise these fixed labels, e.g. a shared "Car" row.
+   */
   rows: 'members' | string[];
 };
 
@@ -22,8 +25,11 @@ export type TemplateSpec = {
   columns: ColumnSpec[];
   options: OptionSpec[];
   sections: SectionSpec[];
-  /** Show the "I'm done" button so people can tick themselves off. */
-  trackDone: boolean;
+  /**
+   * Put everyone in the group in every section (e.g. meals). When off
+   * (e.g. rosters), people choose the sections they're in.
+   */
+  everyone: boolean;
 };
 
 /** How a page's columns are chosen in the page builder. */
@@ -115,8 +121,8 @@ export function formatColumnDate(value: string) {
 
 export type MonthChoice = { year: number; month: number; label: string };
 
-/** This month and the next `count - 1` months. */
-export function upcomingMonths(from: Date, count = 3): MonthChoice[] {
+/** This month and the next `count - 1` months: a full year by default. */
+export function upcomingMonths(from: Date, count = 12): MonthChoice[] {
   return Array.from({ length: count }, (_, i) => {
     const d = new Date(from.getFullYear(), from.getMonth() + i, 1);
     return { year: d.getFullYear(), month: d.getMonth(), label: MONTHS_LONG[d.getMonth()] };
@@ -163,7 +169,7 @@ export type Meal = (typeof MEALS)[number];
 export function mealPlanTemplate(meals: Meal[], includeCarUse: boolean): TemplateSpec {
   return {
     template: 'meal_plan',
-    trackDone: false,
+    everyone: true,
     ...buildColumns({ kind: 'weekdays' }),
     instructions: 'Y = eating at home, N = not eating at home.',
     options: [
@@ -201,20 +207,21 @@ export function rosterTemplate(
 ): TemplateSpec {
   return {
     template: 'roster',
-    trackDone: false,
+    // Not everyone plays every instrument.
+    everyone: false,
     ...buildColumns({ kind: 'dates', year, month, weekdays }),
-    instructions:
-      "Y = I'd prefer to serve on this date\nN = I'm not available\nLeave blank if you're available.",
+    // Every date gets an answer, so a blank cell means "not answered yet".
+    instructions: "Y = I'd prefer to serve on this date\nA = I'm available\nN = I'm not available",
     options: [
       { value: 'Y', label: 'Prefer', colour: COLOURS.green },
+      { value: 'A', label: 'Available', colour: COLOURS.blue },
       { value: 'N', label: 'Not available', colour: COLOURS.red },
     ],
-    // People are added to each section after the page is created.
     sections: sectionTitles.map((title) => ({
       title,
       cellType: 'option' as const,
       notify: false,
-      rows: [],
+      rows: 'members' as const,
     })),
   };
 }
@@ -231,7 +238,7 @@ export function customTemplate(draft: CustomDraft): TemplateSpec {
   const usesChoices = draft.sections.some((s) => s.cellType === 'option');
   return {
     template: 'blank',
-    trackDone: false,
+    everyone: true,
     ...buildColumns(draft.columns),
     instructions: draft.instructions.trim(),
     // Drop half-filled legend entries; skip the legend if nothing uses it.

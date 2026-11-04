@@ -14,20 +14,27 @@ import {
 import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
+import { RenameSheet } from '@/components/rename-sheet';
+import { SectionSheet } from '@/components/section-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
-import { getMyRole, type Role } from '@/lib/groups';
+import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
 import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
   deletePage,
   getPageData,
+  removeRow,
+  renamePage,
+  renameRow,
+  renameSection,
+  reorderRows,
   setCell,
-  setPageTrackDone,
-  setRowsDone,
+  setPageEveryone,
+  setSectionMember,
   type Column,
   type PageData,
   type Row,
@@ -36,6 +43,11 @@ import {
 
 const COLUMN_WORD = { weekdays: 'day', dates: 'date', custom: 'column' } as const;
 const SHORT_SCREEN_HEIGHT = 500;
+const MAX_TITLE_LENGTH = 60;
+const MAX_NAME_LENGTH = 40;
+
+/** What the rename sheet is open for. */
+type Renaming = { kind: 'page' } | { kind: 'row'; row: Row; section: Section };
 
 /** The page with one live change from someone else applied. */
 function withChange(data: PageData, change: PageChange): PageData {
@@ -62,7 +74,23 @@ function withChange(data: PageData, change: PageChange): PageData {
         rows: data.rows.filter((r) => r.id !== change.rowId),
         cells: data.cells.filter((c) => c.row_id !== change.rowId),
       };
+    case 'page':
+      return { ...data, page: { ...data.page, ...change.page } };
+    case 'section': {
+      const others = data.sections.filter((s) => s.id !== change.section.id);
+      const sections = [...others, change.section].sort((a, b) => a.position - b.position);
+      return { ...data, sections };
+    }
   }
+}
+
+/** The page with a section's rows put in a new order. */
+function withRowOrder(data: PageData, rowIds: string[]): PageData {
+  const positions = new Map(rowIds.map((id, position) => [id, position]));
+  const rows = data.rows
+    .map((r) => (positions.has(r.id) ? { ...r, position: positions.get(r.id)! } : r))
+    .sort((a, b) => a.position - b.position);
+  return { ...data, rows };
 }
 
 export default function PageScreen() {
@@ -75,11 +103,19 @@ export default function PageScreen() {
 
   const [data, setData] = useState<PageData | null>(null);
   const [role, setRole] = useState<Role | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
   // null = not toggled yet: start open, except on short (landscape) screens
   // where the card would push the grid out of view.
   const [instructionsToggled, setInstructionsToggled] = useState<boolean | null>(null);
   const [editing, setEditing] = useState<CellTarget | null>(null);
+  const [renaming, setRenaming] = useState<Renaming | null>(null);
+  // The section whose sheet is open (by id, so live renames show in it).
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  // "sectionId:userId" for section changes still saving.
+  const [savingMembers, setSavingMembers] = useState<Set<string>>(new Set());
+  // Off while a name is being dragged, so the page stays still.
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   // Saves for the same cell run one after another, so quick taps land in order.
   const pendingSaves = useRef(new Map<string, Promise<void>>());
   // Values this device has saved per cell but not yet heard back about.
@@ -96,8 +132,12 @@ export default function PageScreen() {
       function load() {
         getPageData(pageId)
           .then(async (result) => {
-            const myRole = await getMyRole(result.page.group_id, userId!);
+            const [myRole, groupMembers] = await Promise.all([
+              getMyRole(result.page.group_id, userId!),
+              listMembers(result.page.group_id),
+            ]);
             if (!active) return;
+            setMembers(groupMembers);
             setData(result);
             setRole(myRole);
             setError(null);
@@ -217,34 +257,118 @@ export default function PageScreen() {
     openEditor(row, column, section);
   }
 
-  async function toggleTrackDone(trackDone: boolean) {
-    if (!data) return;
-    const setLocal = (value: boolean) =>
-      setData((d) => d && { ...d, page: { ...d.page, track_done: value } });
-    setLocal(trackDone);
+  /** Shows a layout change straight away; reloads the page if saving fails. */
+  async function saveLayout(change: (d: PageData) => PageData, save: () => Promise<void>) {
+    setData((d) => d && change(d));
     try {
-      await setPageTrackDone(data.page.id, trackDone);
+      await save();
     } catch (e) {
-      setLocal(!trackDone);
-      showMessage("Couldn't update", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't save that change", e instanceof Error ? e.message : undefined);
+      getPageData(pageId).then(setData).catch(() => {});
     }
   }
 
-  async function toggleDone(rowIds: string[], isDone: boolean) {
-    const setDone = (done: boolean) =>
-      setData((d) =>
-        d && {
-          ...d,
-          rows: d.rows.map((r) => (rowIds.includes(r.id) ? { ...r, is_done: done } : r)),
-        },
+  function handleRename(value: string) {
+    if (!renaming) return;
+    if (renaming.kind === 'page') {
+      saveLayout(
+        (d) => ({ ...d, page: { ...d.page, title: value } }),
+        () => renamePage(pageId, value),
       );
-    setDone(isDone);
-    try {
-      await setRowsDone(rowIds, isDone);
-    } catch (e) {
-      setDone(!isDone);
-      showMessage("Couldn't update", e instanceof Error ? e.message : undefined);
+    } else {
+      const { id } = renaming.row;
+      saveLayout(
+        (d) => ({ ...d, rows: d.rows.map((r) => (r.id === id ? { ...r, label: value } : r)) }),
+        () => renameRow(id, value),
+      );
     }
+  }
+
+  async function confirmRemoveRow(row: Row, section: Section) {
+    setRenaming(null);
+    const confirmed = await confirmAction({
+      title: `Remove ${row.label} from ${section.title}?`,
+      message: `Anything filled in on their row will be lost.${
+        row.user_id ? ' You can add them back by tapping the section’s title.' : ''
+      }`,
+      confirmText: 'Remove',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    saveLayout(
+      (d) => withChange(d, { kind: 'row-removed', rowId: row.id }),
+      () => removeRow(row.id),
+    );
+  }
+
+  function handleRenameSection(sectionId: string, title: string) {
+    saveLayout(
+      (d) => ({
+        ...d,
+        sections: d.sections.map((s) => (s.id === sectionId ? { ...s, title } : s)),
+      }),
+      () => renameSection(sectionId, title),
+    );
+  }
+
+  /** Ticks someone in or out of a section. The new row arrives as a live update. */
+  async function toggleSectionMember(section: Section, member: Member, inSection: boolean) {
+    if (!inSection) {
+      const row = data?.rows.find((r) => r.section_id === section.id && r.user_id === member.user_id);
+      const hasEntries = !!row && !!data?.cells.some((c) => c.row_id === row.id);
+      if (hasEntries) {
+        const isMe = member.user_id === userId;
+        const confirmed = await confirmAction({
+          title: `Take ${isMe ? 'yourself' : member.display_name} out of ${section.title}?`,
+          message: `Anything filled in on ${isMe ? 'your' : 'their'} row will be lost.`,
+          confirmText: 'Take out',
+          destructive: true,
+        });
+        if (!confirmed) return;
+      }
+    }
+
+    const key = `${section.id}:${member.user_id}`;
+    setSavingMembers((s) => new Set(s).add(key));
+    try {
+      await setSectionMember(section.id, member.user_id, inSection);
+      // Don't wait on the live update to show the change.
+      const fresh = await getPageData(pageId);
+      setData(fresh);
+    } catch (e) {
+      showMessage("Couldn't save that change", e instanceof Error ? e.message : undefined);
+    } finally {
+      setSavingMembers((s) => {
+        const next = new Set(s);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  async function toggleEveryone(everyone: boolean) {
+    if (!data) return;
+    if (everyone) {
+      const confirmed = await confirmAction({
+        title: 'Put everyone in every section?',
+        message: 'Anyone missing from a section will be added to it, now and when they join.',
+        confirmText: 'Add everyone',
+      });
+      if (!confirmed) return;
+    }
+    await saveLayout(
+      (d) => ({ ...d, page: { ...d.page, auto_members: everyone } }),
+      () => setPageEveryone(data.page.id, everyone),
+    );
+    // New rows come in as live updates; reload in case they're slow.
+    if (everyone) getPageData(pageId).then(setData).catch(() => {});
+  }
+
+  function handleReorder(rowIds: string[]) {
+    saveLayout(
+      (d) => withRowOrder(d, rowIds),
+      () => reorderRows(rowIds),
+    );
   }
 
   async function confirmDelete() {
@@ -282,16 +406,33 @@ export default function PageScreen() {
   }
 
   const hasRows = data.rows.length > 0;
+  const openSection = data.sections.find((s) => s.id === openSectionId);
   const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
   const overflows = gridWidth(data) > screen.width;
   const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
-  const myRowIds = data.rows.filter((r) => r.user_id === userId).map((r) => r.id);
-  const iAmDone = myRowIds.length > 0 && data.rows.every((r) => r.user_id !== userId || r.is_done);
 
   return (
     <ThemedView style={styles.container}>
-      <Stack.Screen options={{ title: data.page.title }} />
+      <Stack.Screen
+        options={{
+          title: data.page.title,
+          headerTitle: isAdmin
+            ? () => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${data.page.title}. Tap to rename.`}
+                  hitSlop={8}
+                  onPress={() => setRenaming({ kind: 'page' })}>
+                  <ThemedText type="smallBold" numberOfLines={1}>
+                    {data.page.title}
+                  </ThemedText>
+                </Pressable>
+              )
+            : undefined,
+        }}
+      />
       <ScrollView
+        scrollEnabled={scrollEnabled}
         contentInsetAdjustmentBehavior="automatic"
         stickyHeaderIndices={[1]}
         contentContainerStyle={styles.scroll}>
@@ -318,28 +459,17 @@ export default function PageScreen() {
             </Pressable>
           )}
           {data.options.length > 0 && (
-            <Legend
-              options={data.options}
-              blankLabel={data.page.template === 'roster' ? 'Available' : undefined}
-            />
+            <Legend options={data.options} />
           )}
-          {data.page.track_done && myRowIds.length > 0 && (
-            <ThemedView type="backgroundElement" style={styles.doneRow}>
-              <ThemedText type="small" style={styles.doneText}>
-                {iAmDone
-                  ? '✓ You’ve marked yourself as done.'
-                  : 'Finished filling in your rows? Let everyone know.'}
-              </ThemedText>
-              <Button
-                title={iAmDone ? 'Undo' : 'I’m done'}
-                variant={iAmDone ? 'secondary' : 'primary'}
-                onPress={() => toggleDone(myRowIds, !iAmDone)}
-              />
-            </ThemedView>
-          )}
-          {!hasRows && isAdmin && (
+          {!data.page.auto_members && (
             <ThemedText type="small" themeColor="textSecondary">
-              Tap “+ Add person” under each section to add your team.
+              Tap a section’s title to add yourself to it
+              {isAdmin ? ', or to choose who’s in it' : ''}.
+            </ThemedText>
+          )}
+          {data.page.auto_members && !hasRows && (
+            <ThemedText type="small" themeColor="textSecondary">
+              Everyone in the group is added here automatically, including people who join later.
             </ThemedText>
           )}
         </View>
@@ -353,19 +483,12 @@ export default function PageScreen() {
           currentUserId={userId}
           canEditLayout={isAdmin}
           onBodyScroll={onBodyScroll}
+          onRowPress={(row, section) => setRenaming({ kind: 'row', row, section })}
+          onSectionPress={(section) => setOpenSectionId(section.id)}
+          onReorderRows={handleReorder}
+          onDragChange={(active) => setScrollEnabled(!active)}
           onCellPress={handleCellPress}
           onCellLongPress={handleCellLongPress}
-          onAddRow={(sectionId, sectionTitle) =>
-            router.push({
-              pathname: '/pages/add-row',
-              params: {
-                pageId: data.page.id,
-                groupId: data.page.group_id,
-                sectionId,
-                sectionTitle,
-              },
-            })
-          }
         />
 
         {/* 3: footer */}
@@ -379,25 +502,76 @@ export default function PageScreen() {
             {data.options.length > 0
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
+            {isAdmin
+              ? '\nTap a section’s title to rename it or choose who’s in it. Tap a name to rename it, or hold it and slide up or down to move it.'
+              : ''}
           </ThemedText>
           {isAdmin && (
-            <ThemedView type="backgroundElement" style={styles.doneRow}>
-              <View style={styles.doneText}>
-                <ThemedText type="smallBold">“I’m done” button</ThemedText>
+            <ThemedView type="backgroundElement" style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <ThemedText type="smallBold">Everyone in every section</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Let people tick themselves off once they’ve filled in their rows.
+                  {data.page.auto_members
+                    ? 'Everyone in the group has a row in each section.'
+                    : 'People choose which sections they’re in.'}
                 </ThemedText>
               </View>
               <Switch
-                value={data.page.track_done}
-                onValueChange={toggleTrackDone}
-                accessibilityLabel="I'm done button"
+                value={data.page.auto_members}
+                onValueChange={toggleEveryone}
+                accessibilityLabel="Everyone in every section"
               />
             </ThemedView>
           )}
           {isAdmin && <Button title="Delete page" variant="secondary" onPress={confirmDelete} />}
         </View>
       </ScrollView>
+
+      {renaming && (
+        <RenameSheet
+          key={renaming.kind === 'page' ? 'page' : renaming.row.id}
+          heading={renaming.kind === 'page' ? 'Page name' : `Name in ${renaming.section.title}`}
+          note={
+            renaming.kind === 'row' && renaming.row.user_id
+              ? 'On Ovelo · renaming only changes how they appear on this page.'
+              : undefined
+          }
+          value={renaming.kind === 'page' ? data.page.title : renaming.row.label}
+          maxLength={renaming.kind === 'row' ? MAX_NAME_LENGTH : MAX_TITLE_LENGTH}
+          onSave={handleRename}
+          onClose={() => setRenaming(null)}
+          removeLabel={renaming.kind === 'row' ? `Remove from ${renaming.section.title}` : undefined}
+          onRemove={
+            renaming.kind === 'row'
+              ? () => confirmRemoveRow(renaming.row, renaming.section)
+              : undefined
+          }
+        />
+      )}
+
+      {openSection && (
+        <SectionSheet
+          key={openSection.id}
+          title={openSection.title}
+          canRename={isAdmin}
+          holdsPeople={openSection.auto_members}
+          people={members.map((m) => ({
+            userId: m.user_id,
+            name: m.user_id === userId ? `${m.display_name} (you)` : m.display_name,
+            inSection: data.rows.some(
+              (r) => r.section_id === openSection.id && r.user_id === m.user_id,
+            ),
+            canToggle: isAdmin || m.user_id === userId,
+            busy: savingMembers.has(`${openSection.id}:${m.user_id}`),
+          }))}
+          onToggle={(memberId, inSection) => {
+            const member = members.find((m) => m.user_id === memberId);
+            if (member) toggleSectionMember(openSection, member, inSection);
+          }}
+          onRename={(title) => handleRenameSection(openSection.id, title)}
+          onClose={() => setOpenSectionId(null)}
+        />
+      )}
 
       {editing && (
         <CellEditor
@@ -445,14 +619,14 @@ const styles = StyleSheet.create({
   hint: {
     textAlign: 'center',
   },
-  doneRow: {
+  switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
     padding: Spacing.three,
     borderRadius: Spacing.three,
   },
-  doneText: {
+  switchText: {
     flex: 1,
   },
 });

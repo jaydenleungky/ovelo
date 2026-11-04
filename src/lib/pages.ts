@@ -1,4 +1,3 @@
-import { listMembers } from '@/lib/groups';
 import { supabase } from '@/lib/supabase';
 import type { CellType, ColumnMode, TemplateSpec } from '@/lib/templates';
 
@@ -10,7 +9,12 @@ export type PageSummary = {
   created_at: string;
 };
 
-export type Page = PageSummary & { group_id: string; instructions: string; track_done: boolean };
+export type Page = PageSummary & {
+  group_id: string;
+  instructions: string;
+  /** Everyone in the group is in every section. */
+  auto_members: boolean;
+};
 export type Column = { id: string; position: number; label: string; date: string | null };
 export type Option = { id: string; position: number; value: string; label: string; colour: string };
 export type Section = {
@@ -19,6 +23,8 @@ export type Section = {
   title: string;
   cell_type: CellType;
   notify: boolean;
+  /** Holds people, rather than fixed rows like the shared "Car" row. */
+  auto_members: boolean;
 };
 export type Row = {
   id: string;
@@ -26,7 +32,6 @@ export type Row = {
   position: number;
   label: string;
   user_id: string | null;
-  is_done: boolean;
 };
 export type Cell = { row_id: string; column_id: string; value: string };
 
@@ -65,13 +70,19 @@ export async function getPageData(pageId: string): Promise<PageData> {
   const [page, columns, options, sections, rows, cells] = await Promise.all([
     supabase
       .from('pages')
-      .select('id, group_id, title, instructions, template, column_mode, track_done, created_at')
+      .select(
+        'id, group_id, title, instructions, template, column_mode, auto_members, created_at',
+      )
       .eq('id', pageId)
       .single<Page>(),
     byPage<Column>('page_columns', 'id, position, label, date', 'position'),
     byPage<Option>('page_options', 'id, position, value, label, colour', 'position'),
-    byPage<Section>('page_sections', 'id, position, title, cell_type, notify', 'position'),
-    byPage<Row>('page_rows', 'id, section_id, position, label, user_id, is_done', 'position'),
+    byPage<Section>(
+      'page_sections',
+      'id, position, title, cell_type, notify, auto_members',
+      'position',
+    ),
+    byPage<Row>('page_rows', 'id, section_id, position, label, user_id', 'position'),
     byPage<Cell>('cells', 'row_id, column_id, value'),
   ]);
 
@@ -103,16 +114,14 @@ export async function createPageFromTemplate(
         instructions: spec.instructions,
         template: spec.template,
         column_mode: spec.columnMode,
-        track_done: spec.trackDone,
+        auto_members: spec.everyone,
       })
       .select('id')
       .single<{ id: string }>(),
   );
 
   try {
-    const needsMembers = spec.sections.some((s) => s.rows === 'members');
-    const [members, , , sections] = await Promise.all([
-      needsMembers ? listMembers(groupId) : Promise.resolve([]),
+    const [, , sections] = await Promise.all([
       supabase
         .from('page_columns')
         .insert(spec.columns.map((c, position) => ({ page_id: page.id, position, ...c })))
@@ -123,6 +132,7 @@ export async function createPageFromTemplate(
             .insert(spec.options.map((o, position) => ({ page_id: page.id, position, ...o })))
             .then(check)
         : Promise.resolve(),
+      // On "everyone" pages the database fills 'members' sections with the group.
       supabase
         .from('page_sections')
         .insert(
@@ -132,6 +142,7 @@ export async function createPageFromTemplate(
             title: s.title,
             cell_type: s.cellType,
             notify: s.notify,
+            auto_members: s.rows === 'members',
           })),
         )
         .select('id, position')
@@ -140,18 +151,17 @@ export async function createPageFromTemplate(
     ]);
 
     const sectionIds = new Map(sections.map((s) => [s.position, s.id]));
-    const rows = spec.sections.flatMap((section, sectionPosition) => {
-      const entries =
-        section.rows === 'members'
-          ? members.map((m) => ({ label: m.display_name, user_id: m.user_id }))
-          : section.rows.map((label) => ({ label, user_id: null }));
-      return entries.map((entry, position) => ({
-        page_id: page.id,
-        section_id: sectionIds.get(sectionPosition),
-        position,
-        ...entry,
-      }));
-    });
+    const rows = spec.sections.flatMap((section, sectionPosition) =>
+      section.rows === 'members'
+        ? []
+        : section.rows.map((label, position) => ({
+            page_id: page.id,
+            section_id: sectionIds.get(sectionPosition),
+            position,
+            label,
+            user_id: null,
+          })),
+    );
     if (rows.length > 0) {
       check(await supabase.from('page_rows').insert(rows));
     }
@@ -163,36 +173,29 @@ export async function createPageFromTemplate(
   return page.id;
 }
 
-/** Rows already in a section, e.g. to avoid adding someone twice. */
-export async function listSectionRows(sectionId: string): Promise<Row[]> {
-  return check(
-    await supabase
-      .from('page_rows')
-      .select('id, section_id, position, label, user_id, is_done')
-      .eq('section_id', sectionId)
-      .order('position')
-      .overrideTypes<Row[], { merge: false }>(),
-  );
+export async function renamePage(pageId: string, title: string) {
+  check(await supabase.from('pages').update({ title }).eq('id', pageId));
 }
 
-/** Adds rows to the end of a section, in order. */
-export async function addRows(
-  pageId: string,
-  sectionId: string,
-  entries: { label: string; user_id: string | null }[],
-) {
-  const existing = await listSectionRows(sectionId);
-  const start = existing.reduce((max, r) => Math.max(max, r.position + 1), 0);
-  check(
-    await supabase.from('page_rows').insert(
-      entries.map((entry, i) => ({
-        page_id: pageId,
-        section_id: sectionId,
-        position: start + i,
-        ...entry,
-      })),
-    ),
+export async function renameSection(sectionId: string, title: string) {
+  check(await supabase.from('page_sections').update({ title }).eq('id', sectionId));
+}
+
+export async function renameRow(rowId: string, label: string) {
+  check(await supabase.from('page_rows').update({ label }).eq('id', rowId));
+}
+
+/** Removes a row and everything filled in on it. */
+export async function removeRow(rowId: string) {
+  check(await supabase.from('page_rows').delete().eq('id', rowId));
+}
+
+/** Saves a section's new order: `rowIds` from top to bottom. */
+export async function reorderRows(rowIds: string[]) {
+  const results = await Promise.all(
+    rowIds.map((id, position) => supabase.from('page_rows').update({ position }).eq('id', id)),
   );
+  for (const result of results) check(result);
 }
 
 export async function deletePage(pageId: string) {
@@ -215,12 +218,20 @@ export async function setCell(pageId: string, rowId: string, columnId: string, v
   );
 }
 
-/** Marks rows as done (or not), e.g. "I've filled in my availability". */
-export async function setRowsDone(rowIds: string[], isDone: boolean) {
-  check(await supabase.from('page_rows').update({ is_done: isDone }).in('id', rowIds));
+/** Turns "Everyone in every section" on (filling in anyone missing) or off. Admins only. */
+export async function setPageEveryone(pageId: string, everyone: boolean) {
+  check(await supabase.from('pages').update({ auto_members: everyone }).eq('id', pageId));
 }
 
-/** Turns the page's "I'm done" button on or off. Admins only. */
-export async function setPageTrackDone(pageId: string, trackDone: boolean) {
-  check(await supabase.from('pages').update({ track_done: trackDone }).eq('id', pageId));
+/**
+ * Puts a group member in a section, or takes them out (deleting their row).
+ * Anyone can do this for themselves; admins can do it for anyone.
+ */
+export async function setSectionMember(sectionId: string, userId: string, inSection: boolean) {
+  const { error } = await supabase.rpc('set_section_member', {
+    sid: sectionId,
+    uid: userId,
+    in_section: inSection,
+  });
+  if (error) throw error;
 }

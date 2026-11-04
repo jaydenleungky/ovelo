@@ -1,15 +1,19 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
-import type { Cell, Row } from '@/lib/pages';
+import type { Cell, Page, Row, Section } from '@/lib/pages';
 import { supabase } from '@/lib/supabase';
 
 export type PageChange =
   | { kind: 'cell'; rowId: string; columnId: string; value: string }
   | { kind: 'row'; row: Row }
-  | { kind: 'row-removed'; rowId: string };
+  | { kind: 'row-removed'; rowId: string }
+  | { kind: 'page'; page: Pick<Page, 'title' | 'instructions' | 'auto_members'> }
+  | { kind: 'section'; section: Section };
 
 type CellRecord = Cell & { page_id: string };
 type RowRecord = Row & { page_id: string };
+type PageRecord = Page;
+type SectionRecord = Section & { page_id: string };
 
 function toRow(r: RowRecord): Row {
   return {
@@ -18,12 +22,12 @@ function toRow(r: RowRecord): Row {
     position: r.position,
     label: r.label,
     user_id: r.user_id,
-    is_done: r.is_done,
   };
 }
 
 /**
- * Listens for other people's changes to a page's cells and rows.
+ * Listens for other people's changes to a page: its name and settings,
+ * sections, rows and cells.
  *
  * `onConnected` runs each time the connection is (re)made, e.g. after the
  * phone wakes up, so the caller can reload anything it missed meanwhile.
@@ -62,6 +66,18 @@ export function subscribeToPage(
     onChange({ kind: 'row', row: toRow(payload.new) });
   };
 
+  const pageChanged = (payload: RealtimePostgresChangesPayload<PageRecord>) => {
+    if (payload.eventType !== 'UPDATE') return;
+    const { title, instructions, auto_members } = payload.new;
+    onChange({ kind: 'page', page: { title, instructions, auto_members } });
+  };
+
+  const sectionChanged = (payload: RealtimePostgresChangesPayload<SectionRecord>) => {
+    if (payload.eventType === 'DELETE') return;
+    const { id, position, title, cell_type, notify, auto_members } = payload.new;
+    onChange({ kind: 'section', section: { id, position, title, cell_type, notify, auto_members } });
+  };
+
   const channel = supabase
     .channel(`page:${pageId}`)
     .on<CellRecord>(
@@ -93,6 +109,16 @@ export function subscribeToPage(
       'postgres_changes',
       { event: 'DELETE', schema: 'public', table: 'page_rows' },
       rowChanged,
+    )
+    .on<PageRecord>(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'pages', filter: `id=eq.${pageId}` },
+      pageChanged,
+    )
+    .on<SectionRecord>(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'page_sections', filter: onPage },
+      sectionChanged,
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') onConnected();

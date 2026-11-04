@@ -86,7 +86,8 @@ export default function NewPageScreen() {
     instructions: '',
   });
 
-  const [trackDone, setTrackDone] = useState(false);
+  // null = use the template's default (on for meals, off for rosters).
+  const [everyoneChoice, setEveryoneChoice] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,6 +107,7 @@ export default function NewPageScreen() {
         ? `${rosterMonth?.label ?? ''} roster`
         : 'New page';
   const usesChoices = custom.sections.some((s) => s.cellType === 'option');
+  const everyone = everyoneChoice ?? spec.everyone;
 
   const columnWord = spec.columnMode === 'weekdays' ? 'days' : spec.columnMode === 'dates' ? 'dates' : 'columns';
   const summary = `${spec.columns.length} ${columnWord} · ${spec.sections.length} ${
@@ -121,7 +123,7 @@ export default function NewPageScreen() {
     try {
       const pageId = await createPageFromTemplate(groupId, title.trim() || defaultTitle, {
         ...spec,
-        trackDone,
+        everyone,
       });
       router.replace(`/pages/${pageId}`);
     } catch (e) {
@@ -144,6 +146,7 @@ export default function NewPageScreen() {
                 accessibilityState={{ selected }}
                 onPress={() => {
                   setKind(card.kind);
+                  setEveryoneChoice(null);
                   setError(null);
                 }}
                 style={({ pressed }) => [
@@ -251,16 +254,17 @@ export default function NewPageScreen() {
 
         <ThemedView type="backgroundElement" style={styles.switchRow}>
           <View style={styles.switchText}>
-            <ThemedText type="smallBold">“I’m done” button</ThemedText>
+            <ThemedText type="smallBold">Everyone in every section</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              Let people tick themselves off once they’ve filled in their rows. Handy for
-              rosters where you’re waiting on everyone.
+              {everyone
+                ? 'Everyone in the group gets a row in each section, including people who join later.'
+                : 'Sections start empty. People tap a section’s title to add themselves, e.g. only the instruments they play.'}
             </ThemedText>
           </View>
           <Switch
-            value={trackDone}
-            onValueChange={setTrackDone}
-            accessibilityLabel="I'm done button"
+            value={everyone}
+            onValueChange={setEveryoneChoice}
+            accessibilityLabel="Everyone in every section"
           />
         </ThemedView>
 
