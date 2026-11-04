@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { GridBody, GridHeader, Legend, useGridScrollSync } from '@/components/page-grid';
@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
+import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, type Role } from '@/lib/groups';
 import { deletePage, getPageData, type PageData } from '@/lib/pages';
 
@@ -46,23 +47,21 @@ export default function PageScreen() {
 
   const isAdmin = role === 'admin';
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!data) return;
-    Alert.alert(`Delete "${data.page.title}"?`, 'Everything filled in on this page will be lost.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deletePage(data.page.id);
-            router.back();
-          } catch (e) {
-            Alert.alert('Could not delete', e instanceof Error ? e.message : undefined);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction({
+      title: `Delete "${data.page.title}"?`,
+      message: 'Everything filled in on this page will be lost.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await deletePage(data.page.id);
+      router.back();
+    } catch (e) {
+      showMessage('Could not delete', e instanceof Error ? e.message : undefined);
+    }
   }
 
   if (error) {

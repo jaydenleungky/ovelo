@@ -1,6 +1,6 @@
 import { Link, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { signOut, useAuth } from '@/lib/auth';
+import { showMessage } from '@/lib/dialogs';
 import { listMyGroups, type MyGroup } from '@/lib/groups';
 
 export default function HomeScreen() {
@@ -40,7 +41,7 @@ export default function HomeScreen() {
     try {
       await signOut();
     } catch (e) {
-      Alert.alert('Could not sign out', e instanceof Error ? e.message : undefined);
+      showMessage('Could not sign out', e instanceof Error ? e.message : undefined);
     }
   }
 

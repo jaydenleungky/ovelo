@@ -16,17 +16,18 @@ import { useTheme } from '@/hooks/use-theme';
 import type { Column, Option, PageData, Row } from '@/lib/pages';
 import { formatColumnDate, toDateString, weekdayIndex } from '@/lib/templates';
 
-const NAME_WIDTH = 120;
+const NAME_WIDTH = 136;
 const COLUMN_WIDTH = 64;
 // Custom labels like "Week 1" need a little more room than "Mon".
 const CUSTOM_COLUMN_WIDTH = 88;
 
-function columnWidth(columnMode: PageData['page']['column_mode']) {
-  return columnMode === 'custom' ? CUSTOM_COLUMN_WIDTH : COLUMN_WIDTH;
-}
 const HEADER_HEIGHT = 52;
 const SECTION_HEIGHT = 36;
 const ROW_HEIGHT = 44;
+
+function columnWidth(columnMode: PageData['page']['column_mode']) {
+  return columnMode === 'custom' ? CUSTOM_COLUMN_WIDTH : COLUMN_WIDTH;
+}
 
 /**
  * The grid is split into a header and a body so the screen can make the
@@ -219,7 +220,7 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
           </ThemedText>
         </View>,
       );
-      right.push(<View key={`e-${section.id}`} style={[styles.cellRow, styles.rowCell]} />);
+      right.push(<View key={`e-${section.id}`} style={[styles.rowCell, line, { width: data.columns.length * width }]} />);
     }
 
     if (canEditLayout) {
@@ -235,7 +236,7 @@ export function GridBody({ data, currentUserId, canEditLayout, onBodyScroll, onA
           </ThemedText>
         </Pressable>,
       );
-      right.push(<View key={`a-${section.id}`} style={[styles.cellRow, styles.rowCell]} />);
+      right.push(<View key={`a-${section.id}`} style={[styles.rowCell, line, { width: data.columns.length * width }]} />);
     }
   }
 
@@ -295,9 +296,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerCorner: {
+    flexShrink: 0,
     height: HEADER_HEIGHT,
   },
   headerCell: {
+    flexShrink: 0,
     height: HEADER_HEIGHT,
     paddingHorizontal: Spacing.one,
     alignItems: 'center',
@@ -313,10 +316,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   nameColumn: {
+    flexShrink: 0,
     width: NAME_WIDTH,
     borderRightWidth: 1,
   },
   nameCell: {
+    flexShrink: 0,
     width: NAME_WIDTH,
     paddingHorizontal: Spacing.three,
     flexDirection: 'row',
@@ -339,6 +344,7 @@ const styles = StyleSheet.create({
     height: ROW_HEIGHT,
   },
   cell: {
+    flexShrink: 0,
     height: ROW_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',

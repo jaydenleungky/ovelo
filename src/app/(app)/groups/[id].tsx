@@ -1,14 +1,6 @@
 import { Link, router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
@@ -16,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
+import { confirmAction, shareText, showMessage } from '@/lib/dialogs';
 import {
   deleteGroup,
   getGroup,
@@ -75,45 +68,42 @@ export default function GroupScreen() {
 
   async function handleShare() {
     if (!group) return;
-    await Share.share({
-      message: `Join "${group.name}" on Ovelo! Open the app, tap "Join with a code" and enter: ${group.invite_code}`,
-    });
+    await shareText(
+      `Join "${group.name}" on Ovelo! Open the app, tap "Join with a code" and enter: ${group.invite_code}`,
+    );
   }
 
-  function confirmLeave() {
+  async function confirmLeave() {
     if (!group || !userId) return;
     if (isOnlyAdmin) {
-      Alert.alert(
+      showMessage(
         "You're the only admin",
         'Someone else needs to be an admin before you can leave. Managing roles is coming soon.',
       );
       return;
     }
-    const title = isLastMember ? `Delete "${group.name}"?` : `Leave "${group.name}"?`;
-    const message = isLastMember
-      ? "You're the last member, so the group and all its pages will be deleted."
-      : "You'll need a new invite code to join again.";
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: isLastMember ? 'Delete' : 'Leave',
-        style: 'destructive',
-        onPress: async () => {
-          setBusy(true);
-          try {
-            if (isLastMember) {
-              await deleteGroup(group.id);
-            } else {
-              await leaveGroup(group.id, userId);
-            }
-            router.back();
-          } catch (e) {
-            setBusy(false);
-            Alert.alert('Something went wrong', e instanceof Error ? e.message : undefined);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction({
+      title: isLastMember ? `Delete "${group.name}"?` : `Leave "${group.name}"?`,
+      message: isLastMember
+        ? "You're the last member, so the group and all its pages will be deleted."
+        : "You'll need a new invite code to join again.",
+      confirmText: isLastMember ? 'Delete' : 'Leave',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      if (isLastMember) {
+        await deleteGroup(group.id);
+      } else {
+        await leaveGroup(group.id, userId);
+      }
+      router.back();
+    } catch (e) {
+      setBusy(false);
+      showMessage('Something went wrong', e instanceof Error ? e.message : undefined);
+    }
   }
 
   if (error) {
