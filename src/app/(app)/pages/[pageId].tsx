@@ -1,9 +1,17 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { Button } from '@/components/button';
-import { GridBody, GridHeader, Legend, useGridScrollSync } from '@/components/page-grid';
+import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -13,17 +21,23 @@ import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, type Role } from '@/lib/groups';
 import { deletePage, getPageData, type PageData } from '@/lib/pages';
 
+const COLUMN_WORD = { weekdays: 'day', dates: 'date', custom: 'column' } as const;
+const SHORT_SCREEN_HEIGHT = 500;
+
 export default function PageScreen() {
   const theme = useTheme();
   const { pageId } = useLocalSearchParams<{ pageId: string }>();
   const { session } = useAuth();
   const userId = session?.user.id;
   const { headerRef, onBodyScroll } = useGridScrollSync();
+  const screen = useWindowDimensions();
 
   const [data, setData] = useState<PageData | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showInstructions, setShowInstructions] = useState(true);
+  // null = not toggled yet: start open, except on short (landscape) screens
+  // where the card would push the grid out of view.
+  const [instructionsToggled, setInstructionsToggled] = useState<boolean | null>(null);
 
   // Reload when coming back into view, e.g. after adding people.
   useFocusEffect(
@@ -82,6 +96,9 @@ export default function PageScreen() {
   }
 
   const hasRows = data.rows.length > 0;
+  const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
+  const overflows = gridWidth(data) > screen.width;
+  const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
 
   return (
     <ThemedView style={styles.container}>
@@ -96,7 +113,7 @@ export default function PageScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ expanded: showInstructions }}
-              onPress={() => setShowInstructions((v) => !v)}>
+              onPress={() => setInstructionsToggled(!showInstructions)}>
               <ThemedView type="backgroundElement" style={styles.card}>
                 <View style={styles.cardHeader}>
                   <ThemedText type="smallBold">How to fill this in</ThemedText>
@@ -150,9 +167,11 @@ export default function PageScreen() {
         {/* 3: footer */}
         <View style={styles.footer}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-            Scroll sideways to see every{' '}
-            {{ weekdays: 'day', dates: 'date', custom: 'column' }[data.page.column_mode]}.
-            Tapping cells to fill them in is coming next.
+            {overflows
+              ? `Scroll sideways to see every ${COLUMN_WORD[data.page.column_mode]}.`
+              : ''}
+            {showRotateTip ? ' Or turn your phone sideways to see more at once.' : ''}
+            {overflows ? '\n' : ''}Tapping cells to fill them in is coming next.
           </ThemedText>
           {isAdmin && <Button title="Delete page" variant="secondary" onPress={confirmDelete} />}
         </View>

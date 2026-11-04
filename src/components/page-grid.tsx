@@ -29,6 +29,11 @@ function columnWidth(columnMode: PageData['page']['column_mode']) {
   return columnMode === 'custom' ? CUSTOM_COLUMN_WIDTH : COLUMN_WIDTH;
 }
 
+/** Total width of the grid, to tell whether it fits on screen. */
+export function gridWidth(data: PageData) {
+  return NAME_WIDTH + data.columns.length * columnWidth(data.page.column_mode);
+}
+
 /**
  * The grid is split into a header and a body so the screen can make the
  * header sticky. Both scroll sideways together: the body drives the header.
