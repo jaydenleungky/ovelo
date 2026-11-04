@@ -21,6 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, type Role } from '@/lib/groups';
+import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
   deletePage,
   getPageData,
@@ -35,6 +36,34 @@ import {
 
 const COLUMN_WORD = { weekdays: 'day', dates: 'date', custom: 'column' } as const;
 const SHORT_SCREEN_HEIGHT = 500;
+
+/** The page with one live change from someone else applied. */
+function withChange(data: PageData, change: PageChange): PageData {
+  switch (change.kind) {
+    case 'cell': {
+      const { rowId, columnId, value } = change;
+      // Deletes arrive for every page, so skip rows that aren't on this one.
+      if (!data.rows.some((r) => r.id === rowId)) return data;
+      const others = data.cells.filter((c) => !(c.row_id === rowId && c.column_id === columnId));
+      return {
+        ...data,
+        cells: value ? [...others, { row_id: rowId, column_id: columnId, value }] : others,
+      };
+    }
+    case 'row': {
+      const others = data.rows.filter((r) => r.id !== change.row.id);
+      const rows = [...others, change.row].sort((a, b) => a.position - b.position);
+      return { ...data, rows };
+    }
+    case 'row-removed':
+      if (!data.rows.some((r) => r.id === change.rowId)) return data;
+      return {
+        ...data,
+        rows: data.rows.filter((r) => r.id !== change.rowId),
+        cells: data.cells.filter((c) => c.row_id !== change.rowId),
+      };
+  }
+}
 
 export default function PageScreen() {
   const theme = useTheme();
@@ -53,23 +82,55 @@ export default function PageScreen() {
   const [editing, setEditing] = useState<CellTarget | null>(null);
   // Saves for the same cell run one after another, so quick taps land in order.
   const pendingSaves = useRef(new Map<string, Promise<void>>());
+  // Values this device has saved per cell but not yet heard back about.
+  // Live updates for them are our own saves echoing back, so they're skipped.
+  const unconfirmed = useRef(new Map<string, string[]>());
 
-  // Reload when coming back into view, e.g. after adding people.
+  // While the page is in view: load it, and keep it up to date as others edit.
+  // Coming back into view (e.g. after adding people) loads it again.
   useFocusEffect(
     useCallback(() => {
       if (!userId) return;
       let active = true;
-      getPageData(pageId)
-        .then(async (result) => {
-          const myRole = await getMyRole(result.page.group_id, userId);
-          if (!active) return;
-          setData(result);
-          setRole(myRole);
-          setError(null);
-        })
-        .catch((e: Error) => active && setError(e.message));
+
+      function load() {
+        getPageData(pageId)
+          .then(async (result) => {
+            const myRole = await getMyRole(result.page.group_id, userId!);
+            if (!active) return;
+            setData(result);
+            setRole(myRole);
+            setError(null);
+          })
+          .catch((e: Error) => active && setError(e.message));
+      }
+
+      function isOwnEcho(key: string, value: string) {
+        const waiting = unconfirmed.current.get(key);
+        const index = waiting?.indexOf(value) ?? -1;
+        if (!waiting || index === -1) return false;
+        waiting.splice(0, index + 1);
+        // If newer saves are still on their way, keep showing those.
+        if (waiting.length > 0) return true;
+        unconfirmed.current.delete(key);
+        return false;
+      }
+
+      function applyChange(change: PageChange) {
+        if (change.kind === 'cell') {
+          const key = `${change.rowId}:${change.columnId}`;
+          if (isOwnEcho(key, change.value)) return;
+        }
+        setData((d) => (d ? withChange(d, change) : d));
+      }
+
+      load();
+      // Also reloads on every (re)connect, to catch up on anything missed
+      // while the phone was asleep or offline.
+      const unsubscribe = subscribeToPage(pageId, applyChange, load);
       return () => {
         active = false;
+        unsubscribe();
       };
     }, [pageId, userId]),
   );
@@ -111,10 +172,16 @@ export default function PageScreen() {
     showCellLocally(rowId, columnId, value);
 
     const key = `${rowId}:${columnId}`;
+    const waiting = unconfirmed.current.get(key) ?? [];
+    unconfirmed.current.set(key, [...waiting, value]);
+
     const before = pendingSaves.current.get(key) ?? Promise.resolve();
     const save = before
       .then(() => setCell(data.page.id, rowId, columnId, value))
       .catch((e: Error) => {
+        // No echo is coming for a save that failed.
+        const list = unconfirmed.current.get(key);
+        list?.splice(list.indexOf(value), 1);
         showCellLocally(rowId, columnId, previous);
         showMessage("Couldn't save that change", e.message);
       });
