@@ -13,9 +13,9 @@ The same model covers both motivating use cases:
 | Columns   | Mon–Sun (repeating week)     | Specific dates (6 Nov, 7 Nov, …)       |
 | Sections  | Lunch, Dinner, Car Use       | Vocalists, Guitarists, Drummers, …     |
 | Rows      | Jones, Jenny, Jayden, …      | Genevieve (WL), Megan, Isaac, …        |
-| Options   | Y = eating, N = not eating   | Y = prefer, N = unavailable, blank = available |
+| Options   | Y = eating, N = not eating   | Y = prefer, A = available, N = unavailable |
 | Notes     | —                            | Instructions box at the top            |
-| Done flag | —                            | "Bold your name once you're done"      |
+| Who's in  | Everyone, in every section   | Each person picks their sections       |
 
 ## Data model (Supabase / Postgres)
 
@@ -26,13 +26,15 @@ The schema lives in `supabase/migrations/`.
 - **group_members**: `group_id`, `user_id`, `role` (`admin` | `member`)
 - **pages**: `id`, `group_id`, `title`, `instructions`, `column_mode`
   (`weekdays` | `dates` | `custom`), `template` (`meal_plan` | `roster` |
-  `blank`, where `blank` is a page designed from scratch in the page builder)
+  `blank`, where `blank` is a page designed from scratch in the page builder),
+  `auto_members` (everyone in the group is in every section)
 - **page_columns**: `id`, `page_id`, `position`, `label`, `date` (nullable)
 - **page_options**: `id`, `page_id`, `position`, `value` (e.g. `Y`), `label`, `colour`
 - **page_sections**: `id`, `page_id`, `position`, `title`, `cell_type`
-  (`option` | `text`, so "Car Use" can hold free text such as "Dad 2–5pm"), `notify`
+  (`option` | `text`, so "Car Use" can hold free text such as "Dad 2–5pm"), `notify`,
+  `auto_members` (holds people, rather than fixed rows like a shared "Car" row)
 - **page_rows**: `id`, `page_id`, `section_id`, `position`, `label`,
-  `user_id` (nullable, links a row to a member), `is_done`
+  `user_id` (nullable, links a row to a member)
 - **cells**: `page_id`, `row_id`, `column_id`, `value`, `updated_by`,
   `updated_at` (primary key `row_id, column_id`)
 
@@ -41,9 +43,16 @@ cell can never point at different pages.
 
 Row Level Security: a user can read a page's data only if they are in
 `group_members` for that page's group. Any member can fill in cells; only
-admins can change page layout (columns, sections, rows, options). Members can
-mark their own row as done. Groups are created and joined through the
-`create_group(name)` and `join_group(code)` functions.
+admins can change page layout (columns, sections, rows, options). Groups are
+created and joined through the `create_group(name)` and `join_group(code)`
+functions.
+
+Rows for people are managed by the database: on "everyone" pages, members are
+added to every section when it's created or when they join the group, and
+removed when they leave. On other pages (rosters), people add themselves to a
+section with `set_section_member(section, user, in_section)`; admins can use it
+for anyone. Every roster date gets an answer, so a blank cell means "not
+answered yet".
 
 ## Real time and notifications
 
