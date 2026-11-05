@@ -23,7 +23,7 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, isResettingPassword } = useAuth();
 
   // Keep the splash screen up until we know whether the user is signed in.
   useEffect(() => {
@@ -34,11 +34,15 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={!!session}>
+      <Stack.Protected guard={!!session && !isResettingPassword}>
         <Stack.Screen name="(app)" />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />
+      </Stack.Protected>
+      {/* Stays open while a reset code has signed you in but the new password isn't saved yet. */}
+      <Stack.Protected guard={!session || isResettingPassword}>
+        <Stack.Screen name="forgot-password" />
       </Stack.Protected>
     </Stack>
   );

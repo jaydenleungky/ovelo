@@ -92,10 +92,27 @@ export async function joinGroup(code: string): Promise<Group> {
   return data;
 }
 
-export async function leaveGroup(groupId: string, userId: string) {
+/**
+ * Takes someone out of a group (yourself, or anyone if you're an admin).
+ * Their rows on the group's pages go too. The database refuses if it would
+ * leave the group without an admin.
+ */
+export async function removeMember(groupId: string, userId: string) {
   const { error } = await supabase
     .from('group_members')
     .delete()
+    .eq('group_id', groupId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+export const leaveGroup = removeMember;
+
+/** Makes a member an admin, or an admin a member. Admins only. */
+export async function setMemberRole(groupId: string, userId: string, role: Role) {
+  const { error } = await supabase
+    .from('group_members')
+    .update({ role })
     .eq('group_id', groupId)
     .eq('user_id', userId);
   if (error) throw error;

@@ -54,6 +54,24 @@ section with `set_section_member(section, user, in_section)`; admins can use it
 for anyone. Every roster date gets an answer, so a blank cell means "not
 answered yet".
 
+## Email
+
+Supabase sends sign-up confirmation and password reset emails through a
+custom SMTP server (a Gmail app password for now; a transactional provider
+such as Resend with Ovelo's own domain before release). Custom SMTP is what
+makes the email templates editable.
+
+Password reset uses a code rather than a link, so it works in Expo Go and
+the browser without a hosted site or deep links. The **Reset password**
+template must include `{{ .Token }}`:
+
+```html
+<h2>Reset your Ovelo password</h2>
+<p>Your code is:</p>
+<p style="font-size:24px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
+<p>Enter it in the app to choose a new password. If you didn't ask for this, you can ignore this email.</p>
+```
+
 ## Real time and notifications
 
 - Clients subscribe to `cells` changes for the open page (Supabase Realtime).

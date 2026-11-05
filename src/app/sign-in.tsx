@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -152,6 +153,16 @@ export default function SignInScreen() {
                   onPress={handleSubmit}
                   loading={submitting}
                 />
+                {!isSignUp && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push('/forgot-password')}
+                    style={styles.link}>
+                    <ThemedText type="small" style={{ color: theme.tint }}>
+                      Forgot password?
+                    </ThemedText>
+                  </Pressable>
+                )}
               </View>
             </View>
           </ScrollView>
@@ -192,5 +203,9 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: Spacing.three,
+  },
+  link: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.one,
   },
 });

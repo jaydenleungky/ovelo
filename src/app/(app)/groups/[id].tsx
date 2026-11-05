@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { MemberSheet } from '@/components/member-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -14,6 +15,8 @@ import {
   getGroup,
   leaveGroup,
   listMembers,
+  removeMember,
+  setMemberRole,
   type Group,
   type Member,
 } from '@/lib/groups';
@@ -41,6 +44,13 @@ export default function GroupScreen() {
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const reloadMembers = useCallback(() => {
+    listMembers(id)
+      .then(setMembers)
+      .catch(() => {});
+  }, [id]);
 
   // Reload whenever the screen comes into view.
   useFocusEffect(
@@ -65,6 +75,38 @@ export default function GroupScreen() {
   const adminCount = members.filter((m) => m.role === 'admin').length;
   const isLastMember = members.length === 1;
   const isOnlyAdmin = me?.role === 'admin' && adminCount === 1 && !isLastMember;
+  const iAmAdmin = me?.role === 'admin';
+  const selected = members.find((m) => m.user_id === selectedId);
+
+  async function toggleAdmin(member: Member) {
+    const role = member.role === 'admin' ? 'member' : 'admin';
+    setSelectedId(null);
+    setMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, role } : m)));
+    try {
+      await setMemberRole(id, member.user_id, role);
+    } catch (e) {
+      showMessage("Couldn't change their role", e instanceof Error ? e.message : undefined);
+    }
+    reloadMembers();
+  }
+
+  async function confirmRemove(member: Member) {
+    setSelectedId(null);
+    const confirmed = await confirmAction({
+      title: `Remove ${member.display_name} from "${group?.name}"?`,
+      message:
+        'Their rows on this group’s pages, and everything filled in on them, will be lost. They’ll need an invite code to join again.',
+      confirmText: 'Remove',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await removeMember(id, member.user_id);
+    } catch (e) {
+      showMessage("Couldn't remove them", e instanceof Error ? e.message : undefined);
+    }
+    reloadMembers();
+  }
 
   async function handleShare() {
     if (!group) return;
@@ -78,7 +120,7 @@ export default function GroupScreen() {
     if (isOnlyAdmin) {
       showMessage(
         "You're the only admin",
-        'Someone else needs to be an admin before you can leave. Managing roles is coming soon.',
+        'Make someone else an admin first: tap their name under Members.',
       );
       return;
     }
@@ -177,13 +219,25 @@ export default function GroupScreen() {
             <ThemedText type="smallBold">
               Members ({members.length})
             </ThemedText>
+            {iAmAdmin && members.length > 1 && (
+              <ThemedText type="small" themeColor="textSecondary">
+                Tap someone to make them an admin or remove them from the group.
+              </ThemedText>
+            )}
             <ThemedView type="backgroundElement" style={styles.list}>
               {members.map((member, index) => (
-                <View
+                <Pressable
                   key={member.user_id}
-                  style={[
+                  disabled={!iAmAdmin}
+                  accessibilityRole={iAmAdmin ? 'button' : undefined}
+                  accessibilityLabel={`${member.display_name}${member.user_id === userId ? ' (you)' : ''}${
+                    member.role === 'admin' ? ', admin' : ''
+                  }${iAmAdmin ? '. Tap to manage.' : ''}`}
+                  onPress={() => setSelectedId(member.user_id)}
+                  style={({ pressed }) => [
                     styles.memberRow,
                     index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.border },
+                    pressed && styles.pressed,
                   ]}>
                   <ThemedText style={styles.memberName}>
                     {member.display_name}
@@ -194,7 +248,8 @@ export default function GroupScreen() {
                       Admin
                     </ThemedText>
                   )}
-                </View>
+                  {iAmAdmin && <ThemedText themeColor="textSecondary"> ›</ThemedText>}
+                </Pressable>
               ))}
             </ThemedView>
           </View>
@@ -207,6 +262,17 @@ export default function GroupScreen() {
           />
         </View>
       </ScrollView>
+
+      {selected && (
+        <MemberSheet
+          member={selected}
+          isMe={selected.user_id === userId}
+          isOnlyAdmin={selected.role === 'admin' && adminCount === 1}
+          onToggleAdmin={() => toggleAdmin(selected)}
+          onRemove={() => confirmRemove(selected)}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
     </ThemedView>
   );
 }
