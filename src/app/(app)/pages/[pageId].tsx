@@ -16,7 +16,15 @@ import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
 import { ChoicesSheet } from '@/components/choices-sheet';
 import { ColumnsSheet } from '@/components/columns-sheet';
-import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
+import {
+  GridBody,
+  GridHeader,
+  Legend,
+  USES_MOUSE,
+  fittedColumnWidth,
+  gridWidth,
+  useGridScrollSync,
+} from '@/components/page-grid';
 import { RenameSheet } from '@/components/rename-sheet';
 import { SectionSheet } from '@/components/section-sheet';
 import { ScreenFade } from '@/components/screen-fade';
@@ -24,6 +32,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useWideScreen } from '@/hooks/use-wide-screen';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
@@ -60,9 +69,7 @@ const MAX_NAME_LENGTH = 40;
 
 /** What the rename sheet is open for. */
 type Renaming =
-  | { kind: 'page' }
-  | { kind: 'instructions' }
-  | { kind: 'row'; row: Row; section: Section };
+  { kind: 'page' } | { kind: 'instructions' } | { kind: 'row'; row: Row; section: Section };
 const MAX_INSTRUCTIONS_LENGTH = 500;
 
 /** The page with one live change from someone else applied. */
@@ -110,7 +117,9 @@ function withChange(data: PageData, change: PageChange): PageData {
     case 'section-removed': {
       // Deletes arrive for every page, so skip sections that aren't on this one.
       if (!data.sections.some((s) => s.id === change.sectionId)) return data;
-      const gone = new Set(data.rows.filter((r) => r.section_id === change.sectionId).map((r) => r.id));
+      const gone = new Set(
+        data.rows.filter((r) => r.section_id === change.sectionId).map((r) => r.id),
+      );
       return {
         ...data,
         sections: data.sections.filter((s) => s.id !== change.sectionId),
@@ -122,7 +131,10 @@ function withChange(data: PageData, change: PageChange): PageData {
 }
 
 /** The page with one column added, updated or removed. */
-function withColumnChange(data: PageData, change: Extract<PageChange, { kind: 'column' | 'column-removed' }>) {
+function withColumnChange(
+  data: PageData,
+  change: Extract<PageChange, { kind: 'column' | 'column-removed' }>,
+) {
   if (change.kind === 'column') {
     const others = data.columns.filter((c) => c.id !== change.column.id);
     const columns = [...others, change.column].sort((a, b) => a.position - b.position);
@@ -162,6 +174,8 @@ export default function PageScreen() {
   const userId = session?.user.id;
   const { headerRef, onBodyScroll } = useGridScrollSync();
   const screen = useWindowDimensions();
+  // Wide screens: instructions beside the legend, and footer controls in a row.
+  const wide = useWideScreen();
 
   const [data, setData] = useState<PageData | null>(null);
   const [role, setRole] = useState<Role | null>(null);
@@ -333,7 +347,9 @@ export default function PageScreen() {
       await save();
     } catch (e) {
       showMessage("Couldn't save that change", e instanceof Error ? e.message : undefined);
-      getPageData(pageId).then(setData).catch(() => {});
+      getPageData(pageId)
+        .then(setData)
+        .catch(() => {});
     }
   }
 
@@ -405,7 +421,8 @@ export default function PageScreen() {
     if (withEntries.length > 0) {
       const names = withEntries.map((c) => c.label).join(', ');
       const confirmed = await confirmAction({
-        title: withEntries.length === 1 ? `Remove ${names}?` : `Remove ${withEntries.length} columns?`,
+        title:
+          withEntries.length === 1 ? `Remove ${names}?` : `Remove ${withEntries.length} columns?`,
         message: `${withEntries.length === 1 ? '' : `${names}. `}Everything filled in under ${
           withEntries.length === 1 ? 'it' : 'them'
         } will be lost.`,
@@ -421,7 +438,9 @@ export default function PageScreen() {
       setData(await getPageData(pageId));
     } catch (e) {
       showMessage("Couldn't save the columns", e instanceof Error ? e.message : undefined);
-      getPageData(pageId).then(setData).catch(() => {});
+      getPageData(pageId)
+        .then(setData)
+        .catch(() => {});
     }
   }
 
@@ -448,7 +467,9 @@ export default function PageScreen() {
       setData(await getPageData(pageId));
     } catch (e) {
       showMessage("Couldn't save the choices", e instanceof Error ? e.message : undefined);
-      getPageData(pageId).then(setData).catch(() => {});
+      getPageData(pageId)
+        .then(setData)
+        .catch(() => {});
     }
   }
 
@@ -477,7 +498,9 @@ export default function PageScreen() {
   /** Ticks someone in or out of a section. The new row arrives as a live update. */
   async function toggleSectionMember(section: Section, member: Member, inSection: boolean) {
     if (!inSection) {
-      const row = data?.rows.find((r) => r.section_id === section.id && r.user_id === member.user_id);
+      const row = data?.rows.find(
+        (r) => r.section_id === section.id && r.user_id === member.user_id,
+      );
       const hasEntries = !!row && !!data?.cells.some((c) => c.row_id === row.id);
       if (hasEntries) {
         const isMe = member.user_id === userId;
@@ -524,7 +547,10 @@ export default function PageScreen() {
       () => setPageEveryone(data.page.id, everyone),
     );
     // New rows come in as live updates; reload in case they're slow.
-    if (everyone) getPageData(pageId).then(setData).catch(() => {});
+    if (everyone)
+      getPageData(pageId)
+        .then(setData)
+        .catch(() => {});
   }
 
   function handleReorder(rowIds: string[]) {
@@ -572,7 +598,9 @@ export default function PageScreen() {
   const openSection = data.sections.find((s) => s.id === openSectionId);
   const usesChoices = data.sections.some((s) => s.cell_type === 'option');
   const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
-  const overflows = gridWidth(data) > screen.width;
+  // Columns widen to fill spare space, e.g. on a laptop.
+  const columnWidth = fittedColumnWidth(data, screen.width);
+  const overflows = gridWidth(data, columnWidth) > screen.width;
   const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
 
   return (
@@ -603,63 +631,69 @@ export default function PageScreen() {
         contentContainerStyle={styles.scroll}>
         {/* 0: intro (scrolls away) */}
         <View style={styles.intro}>
-          {data.page.instructions !== '' && (
-            <ThemedView type="backgroundElement" style={styles.card}>
-              {/* Separate buttons side by side: a button can't sit inside another. */}
-              <View style={styles.cardHeader}>
+          <View style={[styles.introBlocks, wide && styles.introBlocksWide]}>
+            <View style={[styles.introBlock, wide && styles.introBlockWide]}>
+              {data.page.instructions !== '' && (
+                <ThemedView type="backgroundElement" style={styles.card}>
+                  {/* Separate buttons side by side: a button can't sit inside another. */}
+                  <View style={styles.cardHeader}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showInstructions }}
+                      onPress={() => setInstructionsToggled(!showInstructions)}
+                      style={styles.cardToggle}>
+                      <ThemedText type="smallBold" style={styles.cardTitle}>
+                        How to fill this in
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {showInstructions ? 'Hide' : 'Show'}
+                      </ThemedText>
+                    </Pressable>
+                    {isAdmin && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit instructions"
+                        hitSlop={8}
+                        onPress={() => setRenaming({ kind: 'instructions' })}>
+                        <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
+                          Edit
+                        </ThemedText>
+                      </Pressable>
+                    )}
+                  </View>
+                  {showInstructions && (
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {data.page.instructions}
+                    </ThemedText>
+                  )}
+                </ThemedView>
+              )}
+              {data.page.instructions === '' && isAdmin && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityState={{ expanded: showInstructions }}
-                  onPress={() => setInstructionsToggled(!showInstructions)}
-                  style={styles.cardToggle}>
-                  <ThemedText type="smallBold" style={styles.cardTitle}>
-                    How to fill this in
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {showInstructions ? 'Hide' : 'Show'}
+                  onPress={() => setRenaming({ kind: 'instructions' })}>
+                  <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
+                    + Add instructions
                   </ThemedText>
                 </Pressable>
-                {isAdmin && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Edit instructions"
-                    hitSlop={8}
-                    onPress={() => setRenaming({ kind: 'instructions' })}>
-                    <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
-                      Edit
-                    </ThemedText>
-                  </Pressable>
-                )}
-              </View>
-              {showInstructions && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {data.page.instructions}
-                </ThemedText>
               )}
-            </ThemedView>
-          )}
-          {data.page.instructions === '' && isAdmin && (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setRenaming({ kind: 'instructions' })}>
-              <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
-                + Add instructions
-              </ThemedText>
-            </Pressable>
-          )}
-          {data.options.length > 0 && (
-            <Legend
-              options={data.options}
-              onPress={isAdmin ? () => setEditingChoices(true) : undefined}
-            />
-          )}
-          {data.options.length === 0 && isAdmin && usesChoices && (
-            <Pressable accessibilityRole="button" onPress={() => setEditingChoices(true)}>
-              <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
-                + Add choices
-              </ThemedText>
-            </Pressable>
-          )}
+            </View>
+            <View style={[styles.introBlock, wide && styles.introBlockWide]}>
+              {data.options.length > 0 && (
+                <Legend
+                  options={data.options}
+                  onPress={isAdmin ? () => setEditingChoices(true) : undefined}
+                />
+              )}
+              {data.options.length === 0 && isAdmin && usesChoices && (
+                <Pressable accessibilityRole="button" onPress={() => setEditingChoices(true)}>
+                  <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
+                    + Add choices
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
+          </View>
           {!data.page.auto_members && (
             <ThemedText type="small" themeColor="textSecondary">
               Tap a section’s title to add yourself to it
@@ -675,6 +709,7 @@ export default function PageScreen() {
 
         {/* 1: sticky header */}
         <GridHeader
+          width={columnWidth}
           data={data}
           headerRef={headerRef}
           onColumnsPress={isAdmin ? () => setEditingColumns(true) : undefined}
@@ -682,6 +717,7 @@ export default function PageScreen() {
 
         {/* 2: grid */}
         <GridBody
+          width={columnWidth}
           data={data}
           currentUserId={userId}
           canEditLayout={isAdmin}
@@ -698,43 +734,49 @@ export default function PageScreen() {
         {/* 3: footer */}
         <View style={styles.footer}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-            {overflows
-              ? `Scroll sideways to see every ${COLUMN_WORD[data.page.column_mode]}.`
-              : ''}
+            {overflows ? `Scroll sideways to see every ${COLUMN_WORD[data.page.column_mode]}.` : ''}
             {showRotateTip ? ' Or turn your phone sideways to see more at once.' : ''}
             {overflows ? '\n' : ''}
             {data.options.length > 0
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
             {isAdmin
-              ? '\nTap a column, a section’s title, a name or the choices to edit them. Hold a title or name, then slide up or down to move it.'
+              ? `\nTap a column, a section’s title, a name or the choices to edit them. ${
+                  USES_MOUSE ? 'Drag' : 'Hold'
+                } a title or name, then slide up or down to move it.`
               : ''}
           </ThemedText>
           {isAdmin && (
-            <Button
-              title="Add a section"
-              variant="secondary"
-              onPress={() => setAddingSection(true)}
-            />
-          )}
-          {isAdmin && (
-            <ThemedView type="backgroundElement" style={styles.switchRow}>
-              <View style={styles.switchText}>
-                <ThemedText type="smallBold">Everyone in every section</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {data.page.auto_members
-                    ? 'Everyone in the group has a row in each section.'
-                    : 'People choose which sections they’re in.'}
-                </ThemedText>
+            <View style={[styles.controls, wide && styles.controlsWide]}>
+              <View style={wide && styles.controlItem}>
+                <Button
+                  title="Add a section"
+                  variant="secondary"
+                  onPress={() => setAddingSection(true)}
+                />
               </View>
-              <Switch
-                value={data.page.auto_members}
-                onValueChange={toggleEveryone}
-                accessibilityLabel="Everyone in every section"
-              />
-            </ThemedView>
+              <ThemedView
+                type="backgroundElement"
+                style={[styles.switchRow, wide && styles.controlItemWide]}>
+                <View style={styles.switchText}>
+                  <ThemedText type="smallBold">Everyone in every section</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {data.page.auto_members
+                      ? 'Everyone in the group has a row in each section.'
+                      : 'People choose which sections they’re in.'}
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={data.page.auto_members}
+                  onValueChange={toggleEveryone}
+                  accessibilityLabel="Everyone in every section"
+                />
+              </ThemedView>
+              <View style={wide && styles.controlItem}>
+                <Button title="Delete page" variant="danger" onPress={confirmDelete} />
+              </View>
+            </View>
           )}
-          {isAdmin && <Button title="Delete page" variant="danger" onPress={confirmDelete} />}
         </View>
       </ScrollView>
 
@@ -771,7 +813,9 @@ export default function PageScreen() {
           allowEmpty={renaming.kind === 'instructions'}
           onSave={handleRename}
           onClose={() => setRenaming(null)}
-          removeLabel={renaming.kind === 'row' ? `Remove from ${renaming.section.title}` : undefined}
+          removeLabel={
+            renaming.kind === 'row' ? `Remove from ${renaming.section.title}` : undefined
+          }
           onRemove={
             renaming.kind === 'row'
               ? () => confirmRemoveRow(renaming.row, renaming.section)
@@ -884,6 +928,32 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
+  },
+  introBlocks: {
+    gap: Spacing.three,
+  },
+  introBlocksWide: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  introBlock: {
+    gap: Spacing.three,
+  },
+  introBlockWide: {
+    flex: 1,
+  },
+  controls: {
+    gap: Spacing.three,
+  },
+  controlsWide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  controlItem: {
+    flex: 1,
+  },
+  controlItemWide: {
+    flex: 2,
   },
   footer: {
     gap: Spacing.three,

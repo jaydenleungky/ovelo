@@ -1,10 +1,9 @@
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { Sheet } from '@/components/sheet';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Member } from '@/lib/groups';
 
@@ -28,85 +27,51 @@ export function MemberSheet({
   onClose,
 }: MemberSheetProps) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const isAdmin = member.role === 'admin';
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.fill}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-        />
-        <ThemedView
-          style={[
-            styles.sheet,
-            { paddingBottom: Spacing.four + insets.bottom, borderColor: theme.border },
-          ]}>
-          <View style={styles.header}>
-            <ThemedText type="smallBold">
-              {member.display_name}
-              {isMe ? ' (you)' : ''}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {isAdmin
-                ? 'Admin · can create and edit pages, and manage members'
-                : 'Member · can fill in pages'}
-            </ThemedText>
-          </View>
-
-          <View style={styles.actions}>
-            <Button
-              title={isAdmin ? (isMe ? 'Stop being an admin' : 'Remove as admin') : 'Make admin'}
-              variant={isAdmin ? 'secondary' : 'primary'}
-              onPress={onToggleAdmin}
-              disabled={isAdmin && isOnlyAdmin}
-            />
-            {isAdmin && isOnlyAdmin && (
-              <ThemedText type="small" themeColor="textSecondary">
-                A group needs at least one admin. Make someone else an admin first.
-              </ThemedText>
-            )}
-            {!isMe && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={onRemove}
-                style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
-                <ThemedText type="small" style={{ color: theme.danger, fontWeight: 600 }}>
-                  Remove from group
-                </ThemedText>
-              </Pressable>
-            )}
-            <Button title="Done" variant="secondary" onPress={onClose} />
-          </View>
-        </ThemedView>
+    <Sheet onClose={onClose}>
+      <View style={styles.header}>
+        <ThemedText type="smallBold">
+          {member.display_name}
+          {isMe ? ' (you)' : ''}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {isAdmin
+            ? 'Admin · can create and edit pages, and manage members'
+            : 'Member · can fill in pages'}
+        </ThemedText>
       </View>
-    </Modal>
+
+      <View style={styles.actions}>
+        <Button
+          title={isAdmin ? (isMe ? 'Stop being an admin' : 'Remove as admin') : 'Make admin'}
+          variant={isAdmin ? 'secondary' : 'primary'}
+          onPress={onToggleAdmin}
+          disabled={isAdmin && isOnlyAdmin}
+        />
+        {isAdmin && isOnlyAdmin && (
+          <ThemedText type="small" themeColor="textSecondary">
+            A group needs at least one admin. Make someone else an admin first.
+          </ThemedText>
+        )}
+        {!isMe && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onRemove}
+            style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
+            <ThemedText type="small" style={{ color: theme.danger, fontWeight: 600 }}>
+              Remove from group
+            </ThemedText>
+          </Pressable>
+        )}
+        <Button title="Done" variant="secondary" onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  // Dim the whole screen, including beside a narrow sheet on wide screens.
-  fill: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  backdrop: {
-    flex: 1,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-    gap: Spacing.three,
-    padding: Spacing.four,
-    borderTopLeftRadius: Spacing.four,
-    borderTopRightRadius: Spacing.four,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
-  },
   header: {
     gap: Spacing.half,
   },

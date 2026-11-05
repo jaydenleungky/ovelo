@@ -1,21 +1,12 @@
 import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { Sheet } from '@/components/sheet';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Column, ColumnEdit } from '@/lib/pages';
 import {
@@ -42,7 +33,6 @@ const MAX_LABEL_LENGTH = 20;
 /** Edit what goes across the top of a page. Nothing changes until Save. */
 export function ColumnsSheet({ columnMode, columns, onSave, onClose }: ColumnsSheetProps) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const [next, setNext] = useState<ColumnEdit[]>(columns);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,67 +44,49 @@ export function ColumnsSheet({ columnMode, columns, onSave, onClose }: ColumnsSh
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
+    <Sheet onClose={onClose} scroll>
+      <ThemedText type="smallBold">Columns</ThemedText>
+
+      {columnMode === 'weekdays' && (
+        <WeekdayPicker
+          value={next}
+          onChange={(value) => {
+            setNext(value);
+            setError(null);
+          }}
         />
-        <ThemedView
-          style={[
-            styles.sheet,
-            { paddingBottom: Spacing.four + insets.bottom, borderColor: theme.border },
-          ]}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <ThemedText type="smallBold">Columns</ThemedText>
+      )}
+      {columnMode === 'dates' && (
+        <DatePicker
+          original={columns}
+          value={next}
+          onChange={(value) => {
+            setNext(value);
+            setError(null);
+          }}
+        />
+      )}
+      {columnMode === 'custom' && (
+        <LabelEditor
+          value={next}
+          onChange={(value) => {
+            setNext(value);
+            setError(null);
+          }}
+        />
+      )}
 
-            {columnMode === 'weekdays' && (
-              <WeekdayPicker
-                value={next}
-                onChange={(value) => {
-                  setNext(value);
-                  setError(null);
-                }}
-              />
-            )}
-            {columnMode === 'dates' && (
-              <DatePicker
-                original={columns}
-                value={next}
-                onChange={(value) => {
-                  setNext(value);
-                  setError(null);
-                }}
-              />
-            )}
-            {columnMode === 'custom' && (
-              <LabelEditor
-                value={next}
-                onChange={(value) => {
-                  setNext(value);
-                  setError(null);
-                }}
-              />
-            )}
+      {error && (
+        <ThemedText type="small" style={{ color: theme.danger }} accessibilityRole="alert">
+          {error}
+        </ThemedText>
+      )}
 
-            {error && (
-              <ThemedText type="small" style={{ color: theme.danger }} accessibilityRole="alert">
-                {error}
-              </ThemedText>
-            )}
-
-            <View style={styles.actions}>
-              <Button title="Save" onPress={save} />
-              <Button title="Cancel" variant="secondary" onPress={onClose} />
-            </View>
-          </ScrollView>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </Modal>
+      <View style={styles.actions}>
+        <Button title="Save" onPress={save} />
+        <Button title="Cancel" variant="secondary" onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 
@@ -263,28 +235,6 @@ function LabelEditor({ value, onChange }: PickerProps) {
 }
 
 const styles = StyleSheet.create({
-  // Dim the whole screen, including beside a narrow sheet on wide screens.
-  fill: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  backdrop: {
-    flex: 1,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    maxHeight: '85%',
-    alignSelf: 'center',
-    borderTopLeftRadius: Spacing.four,
-    borderTopRightRadius: Spacing.four,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
-  },
-  content: {
-    gap: Spacing.three,
-    padding: Spacing.four,
-  },
   group: {
     gap: Spacing.two,
   },
