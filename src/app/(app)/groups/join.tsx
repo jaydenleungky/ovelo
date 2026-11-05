@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
@@ -9,12 +9,14 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { joinGroup } from '@/lib/groups';
-
-const CODE_LENGTH = 6;
+import { INVITE_CODE_LENGTH as CODE_LENGTH, cleanInviteCode } from '@/lib/invites';
 
 export default function JoinGroupScreen() {
   const theme = useTheme();
-  const [code, setCode] = useState('');
+  // Filled in when arriving from an invite link.
+  const params = useLocalSearchParams<{ code?: string }>();
+  const invited = cleanInviteCode(params.code ?? '');
+  const [code, setCode] = useState(invited);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,14 +40,16 @@ export default function JoinGroupScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ThemedText themeColor="textSecondary">
-          Ask someone in the group for their {CODE_LENGTH}-character invite code.
+          {invited
+            ? 'You’ve been invited to a group. Tap Join group to join it.'
+            : `Ask someone in the group for their ${CODE_LENGTH}-character invite code.`}
         </ThemedText>
         <TextField
           label="Invite code"
           value={code}
-          onChangeText={(text) => setCode(text.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          onChangeText={(text) => setCode(cleanInviteCode(text))}
           placeholder="e.g. A3F9K2"
-          autoFocus
+          autoFocus={!invited}
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={CODE_LENGTH}

@@ -54,8 +54,10 @@ export async function shareText(text: string) {
     try {
       await navigator.share({ text });
       return;
-    } catch {
-      // Cancelled or unsupported; fall back to copying.
+    } catch (e) {
+      // Closing the share menu isn't a failure: don't copy anything.
+      if (e instanceof Error && e.name === 'AbortError') return;
+      // Otherwise sharing isn't available here; fall back to copying.
     }
   }
   try {

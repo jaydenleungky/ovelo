@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { signIn, signInWithGoogle, signUp } from '@/lib/auth';
+import { hasPendingInvite } from '@/lib/pending-invite';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -25,6 +26,8 @@ export default function SignInScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Came from an invite link: say why they're here.
+  const [invited] = useState(hasPendingInvite);
   const [googleBusy, setGoogleBusy] = useState(false);
 
   const isSignUp = mode === 'sign-up';
@@ -100,6 +103,15 @@ export default function SignInScreen() {
                   Plan meals and rosters together.
                 </ThemedText>
               </View>
+
+              {invited && (
+                <ThemedView type="backgroundElement" style={styles.invite}>
+                  <ThemedText type="smallBold">You’ve been invited to a group</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    Sign in or create an account, and you’ll go straight to joining it.
+                  </ThemedText>
+                </ThemedView>
+              )}
 
               {/* Signs in or creates an account in one go. */}
               <Button
@@ -231,6 +243,11 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: Spacing.one,
+  },
+  invite: {
+    gap: Spacing.half,
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
   },
   divider: {
     flexDirection: 'row',
