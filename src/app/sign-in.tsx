@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { signIn, signUp } from '@/lib/auth';
+import { signIn, signInWithGoogle, signUp } from '@/lib/auth';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -24,6 +24,7 @@ export default function SignInScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   const isSignUp = mode === 'sign-up';
 
@@ -68,6 +69,21 @@ export default function SignInScreen() {
     }
   }
 
+  async function handleGoogle() {
+    setGoogleBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await signInWithGoogle();
+      // Signed in: the auth listener switches to the app. (On the web the
+      // page has already gone to Google.)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Google sign-in didn’t work. Please try again.');
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.container}>
@@ -81,6 +97,21 @@ export default function SignInScreen() {
                 <ThemedText themeColor="textSecondary">
                   Plan meals and rosters together.
                 </ThemedText>
+              </View>
+
+              {/* Signs in or creates an account in one go. */}
+              <Button
+                title="Continue with Google"
+                variant="secondary"
+                onPress={handleGoogle}
+                loading={googleBusy}
+              />
+              <View style={styles.divider}>
+                <View style={[styles.line, { backgroundColor: theme.border }]} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  or use your email
+                </ThemedText>
+                <View style={[styles.line, { backgroundColor: theme.border }]} />
               </View>
 
               <ThemedView type="backgroundElement" style={styles.tabs}>
@@ -189,6 +220,15 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: Spacing.one,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  line: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
   },
   tabs: {
     flexDirection: 'row',

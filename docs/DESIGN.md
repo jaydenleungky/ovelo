@@ -72,6 +72,29 @@ template must include `{{ .Token }}`:
 <p>Enter it in the app to choose a new password. If you didn't ask for this, you can ignore this email.</p>
 ```
 
+## Google sign-in
+
+"Continue with Google" uses Supabase's Google provider with the PKCE flow.
+On the web the page redirects to Google and back; in the app Google opens in
+a browser sheet (`expo-web-browser`) that returns with a code, which is
+swapped for a session. `expo-crypto` fills in Web Crypto on phones so the
+code is protected with SHA-256.
+
+Setup outside the code:
+- Google Cloud project "Ovelo": a **Web application** OAuth client whose
+  redirect URI is `https://<project>.supabase.co/auth/v1/callback`. The app
+  is in **Testing**, so only listed test users can use Google sign-in until
+  the branding is verified (that needs Ovelo's own domain and a privacy
+  policy page).
+- Supabase **Authentication → Sign In / Providers → Google**: the client ID
+  and secret.
+- Supabase **Authentication → URL Configuration → Redirect URLs**:
+  `exp://**` and `exps://**` (Expo Go, `exps` over a tunnel), `ovelo://**`
+  (app builds) and `http://localhost:8081/**`, `http://localhost:8082/**`
+  (web in development). The hosted site's address is added when it exists.
+
+New Google accounts take their display name from the Google profile.
+
 ## Real time and notifications
 
 - Clients subscribe to `cells` changes for the open page (Supabase Realtime).
