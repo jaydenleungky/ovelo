@@ -8,8 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { signOut, useAuth } from '@/lib/auth';
-import { showMessage } from '@/lib/dialogs';
+import { deleteMyAccount, signOut, useAuth } from '@/lib/auth';
+import { confirmAction, showMessage } from '@/lib/dialogs';
 import { listMyGroups, type MyGroup } from '@/lib/groups';
 import { MAX_DISPLAY_NAME_LENGTH, getMyDisplayName, setDisplayName } from '@/lib/profile';
 
@@ -50,6 +50,23 @@ export default function HomeScreen() {
     } catch (e) {
       setName(previous);
       showMessage("Couldn't change your name", e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  async function confirmDeleteAccount() {
+    const confirmed = await confirmAction({
+      title: 'Delete your account?',
+      message:
+        'This can’t be undone. Your account, your name and everything you’ve filled in on pages will be deleted, and you’ll leave all your groups. Groups where you’re the only member are deleted too.',
+      confirmText: 'Delete account',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await deleteMyAccount();
+      // Signed out, so the app returns to the sign-in screen.
+    } catch (e) {
+      showMessage("Couldn't delete your account", e instanceof Error ? e.message : undefined);
     }
   }
 
@@ -135,6 +152,14 @@ export default function HomeScreen() {
               Signed in as {session?.user.email}
             </ThemedText>
             <Button title="Sign out" variant="secondary" onPress={handleSignOut} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={confirmDeleteAccount}
+              style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}>
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                Delete account
+              </ThemedText>
+            </Pressable>
           </View>
         </View>
       </ScrollView>
@@ -185,6 +210,10 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
     marginTop: Spacing.two,
+  },
+  deleteLink: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.two,
   },
   footer: {
     gap: Spacing.two,

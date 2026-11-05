@@ -88,6 +88,18 @@ export async function sendPasswordResetCode(email: string) {
   if (error) throw error;
 }
 
+/**
+ * Deletes your account, profile and rows for good. Groups where you're the
+ * only member are deleted too. Refuses if you're the only admin of a group
+ * that has other people in it.
+ */
+export async function deleteMyAccount() {
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) throw error;
+  // The account is gone, so just forget the session on this device.
+  await supabase.auth.signOut({ scope: 'local' });
+}
+
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
