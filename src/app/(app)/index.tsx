@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { RenameSheet } from '@/components/rename-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -10,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { signOut, useAuth } from '@/lib/auth';
 import { showMessage } from '@/lib/dialogs';
 import { listMyGroups, type MyGroup } from '@/lib/groups';
+import { MAX_DISPLAY_NAME_LENGTH, getMyDisplayName, setDisplayName } from '@/lib/profile';
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -17,6 +19,8 @@ export default function HomeScreen() {
   const userId = session?.user.id;
   const [groups, setGroups] = useState<MyGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
 
   // Reload whenever this screen comes back into view, e.g. after
   // creating, joining or leaving a group.
@@ -24,10 +28,11 @@ export default function HomeScreen() {
     useCallback(() => {
       if (!userId) return;
       let active = true;
-      listMyGroups(userId)
-        .then((result) => {
+      Promise.all([listMyGroups(userId), getMyDisplayName(userId)])
+        .then(([result, displayName]) => {
           if (!active) return;
           setGroups(result);
+          setName(displayName);
           setError(null);
         })
         .catch((e: Error) => active && setError(e.message));
@@ -36,6 +41,17 @@ export default function HomeScreen() {
       };
     }, [userId]),
   );
+
+  async function handleRename(next: string) {
+    const previous = name;
+    setName(next);
+    try {
+      await setDisplayName(next);
+    } catch (e) {
+      setName(previous);
+      showMessage("Couldn't change your name", e instanceof Error ? e.message : undefined);
+    }
+  }
 
   async function handleSignOut() {
     try {
@@ -97,6 +113,24 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.footer}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Your name: ${name ?? ''}. Tap to change it.`}
+              disabled={name === null}
+              onPress={() => setEditingName(true)}
+              style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedView type="backgroundElement" style={[styles.card, styles.groupRow]}>
+                <View style={styles.groupText}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    Your name
+                  </ThemedText>
+                  <ThemedText type="smallBold">{name || 'Not set'}</ThemedText>
+                </View>
+                <ThemedText type="small" style={{ color: theme.tint }}>
+                  Change
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
             <ThemedText type="small" themeColor="textSecondary">
               Signed in as {session?.user.email}
             </ThemedText>
@@ -104,6 +138,17 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {editingName && (
+        <RenameSheet
+          heading="Your name"
+          note="This is how you appear in your groups and on pages."
+          value={name ?? ''}
+          maxLength={MAX_DISPLAY_NAME_LENGTH}
+          onSave={handleRename}
+          onClose={() => setEditingName(false)}
+        />
+      )}
     </ThemedView>
   );
 }
