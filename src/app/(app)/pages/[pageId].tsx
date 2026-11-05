@@ -11,8 +11,11 @@ import {
   View,
 } from 'react-native';
 
+import { AddSectionSheet } from '@/components/add-section-sheet';
 import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
+import { ChoicesSheet } from '@/components/choices-sheet';
+import { ColumnsSheet } from '@/components/columns-sheet';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
 import { RenameSheet } from '@/components/rename-sheet';
 import { SectionSheet } from '@/components/section-sheet';
@@ -25,13 +28,21 @@ import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
 import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
+  addSection,
   deletePage,
+  deleteSection,
   getPageData,
   removeRow,
   renamePage,
   renameRow,
   renameSection,
   reorderRows,
+  reorderSections,
+  saveColumns,
+  saveOptions,
+  setInstructions,
+  type ColumnEdit,
+  type OptionEdit,
   setCell,
   setPageEveryone,
   setSectionMember,
@@ -47,7 +58,11 @@ const MAX_TITLE_LENGTH = 60;
 const MAX_NAME_LENGTH = 40;
 
 /** What the rename sheet is open for. */
-type Renaming = { kind: 'page' } | { kind: 'row'; row: Row; section: Section };
+type Renaming =
+  | { kind: 'page' }
+  | { kind: 'instructions' }
+  | { kind: 'row'; row: Row; section: Section };
+const MAX_INSTRUCTIONS_LENGTH = 500;
 
 /** The page with one live change from someone else applied. */
 function withChange(data: PageData, change: PageChange): PageData {
@@ -81,7 +96,53 @@ function withChange(data: PageData, change: PageChange): PageData {
       const sections = [...others, change.section].sort((a, b) => a.position - b.position);
       return { ...data, sections };
     }
+    case 'column':
+    case 'column-removed':
+      return withColumnChange(data, change);
+    case 'option': {
+      const others = data.options.filter((o) => o.id !== change.option.id);
+      const options = [...others, change.option].sort((a, b) => a.position - b.position);
+      return { ...data, options };
+    }
+    case 'option-removed':
+      return { ...data, options: data.options.filter((o) => o.id !== change.optionId) };
+    case 'section-removed': {
+      // Deletes arrive for every page, so skip sections that aren't on this one.
+      if (!data.sections.some((s) => s.id === change.sectionId)) return data;
+      const gone = new Set(data.rows.filter((r) => r.section_id === change.sectionId).map((r) => r.id));
+      return {
+        ...data,
+        sections: data.sections.filter((s) => s.id !== change.sectionId),
+        rows: data.rows.filter((r) => !gone.has(r.id)),
+        cells: data.cells.filter((c) => !gone.has(c.row_id)),
+      };
+    }
   }
+}
+
+/** The page with one column added, updated or removed. */
+function withColumnChange(data: PageData, change: Extract<PageChange, { kind: 'column' | 'column-removed' }>) {
+  if (change.kind === 'column') {
+    const others = data.columns.filter((c) => c.id !== change.column.id);
+    const columns = [...others, change.column].sort((a, b) => a.position - b.position);
+    return { ...data, columns };
+  }
+  // Deletes arrive for every page, so skip columns that aren't on this one.
+  if (!data.columns.some((c) => c.id === change.columnId)) return data;
+  return {
+    ...data,
+    columns: data.columns.filter((c) => c.id !== change.columnId),
+    cells: data.cells.filter((c) => c.column_id !== change.columnId),
+  };
+}
+
+/** The page with its sections put in a new order. */
+function withSectionOrder(data: PageData, sectionIds: string[]): PageData {
+  const positions = new Map(sectionIds.map((id, position) => [id, position]));
+  const sections = data.sections
+    .map((s) => ({ ...s, position: positions.get(s.id) ?? s.position }))
+    .sort((a, b) => a.position - b.position);
+  return { ...data, sections };
 }
 
 /** The page with a section's rows put in a new order. */
@@ -112,6 +173,9 @@ export default function PageScreen() {
   const [renaming, setRenaming] = useState<Renaming | null>(null);
   // The section whose sheet is open (by id, so live renames show in it).
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  const [addingSection, setAddingSection] = useState(false);
+  const [editingColumns, setEditingColumns] = useState(false);
+  const [editingChoices, setEditingChoices] = useState(false);
   // "sectionId:userId" for section changes still saving.
   const [savingMembers, setSavingMembers] = useState<Set<string>>(new Set());
   // Off while a name is being dragged, so the page stays still.
@@ -157,6 +221,10 @@ export default function PageScreen() {
       }
 
       function applyChange(change: PageChange) {
+        // Choice codes pass through "~0"-style placeholders while being
+        // changed; skip those so they don't flash up on screen.
+        if (change.kind === 'cell' && change.value.startsWith('~')) return;
+        if (change.kind === 'option' && change.option.value.startsWith('~')) return;
         if (change.kind === 'cell') {
           const key = `${change.rowId}:${change.columnId}`;
           if (isOwnEcho(key, change.value)) return;
@@ -275,6 +343,11 @@ export default function PageScreen() {
         (d) => ({ ...d, page: { ...d.page, title: value } }),
         () => renamePage(pageId, value),
       );
+    } else if (renaming.kind === 'instructions') {
+      saveLayout(
+        (d) => ({ ...d, page: { ...d.page, instructions: value } }),
+        () => setInstructions(pageId, value),
+      );
     } else {
       const { id } = renaming.row;
       saveLayout(
@@ -308,6 +381,95 @@ export default function PageScreen() {
         sections: d.sections.map((s) => (s.id === sectionId ? { ...s, title } : s)),
       }),
       () => renameSection(sectionId, title),
+    );
+  }
+
+  async function handleAddSection(title: string, cellType: Section['cell_type']) {
+    if (!data) return;
+    const position = data.sections.reduce((max, s) => Math.max(max, s.position + 1), 0);
+    try {
+      await addSection(pageId, position, title, cellType);
+      // The section (and, on "everyone" pages, its people) also arrive live.
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't add the section", e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  async function handleSaveColumns(next: ColumnEdit[]) {
+    if (!data) return;
+    const kept = new Set(next.flatMap((c) => (c.id ? [c.id] : [])));
+    const removed = data.columns.filter((c) => !kept.has(c.id));
+    const withEntries = removed.filter((c) => data.cells.some((cell) => cell.column_id === c.id));
+    if (withEntries.length > 0) {
+      const names = withEntries.map((c) => c.label).join(', ');
+      const confirmed = await confirmAction({
+        title: withEntries.length === 1 ? `Remove ${names}?` : `Remove ${withEntries.length} columns?`,
+        message: `${withEntries.length === 1 ? '' : `${names}. `}Everything filled in under ${
+          withEntries.length === 1 ? 'it' : 'them'
+        } will be lost.`,
+        confirmText: 'Remove',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setEditingColumns(false);
+    try {
+      await saveColumns(pageId, data.columns, next);
+      // New columns get their ids from the database; they also arrive live.
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't save the columns", e instanceof Error ? e.message : undefined);
+      getPageData(pageId).then(setData).catch(() => {});
+    }
+  }
+
+  async function handleSaveChoices(next: OptionEdit[]) {
+    if (!data) return;
+    const keptIds = new Set(next.flatMap((o) => (o.id ? [o.id] : [])));
+    const finalValues = new Set(next.map((o) => o.value));
+    const cleared = data.options.filter((o) => !keptIds.has(o.id) && !finalValues.has(o.value));
+    const clearedCount = data.cells.filter((c) => cleared.some((o) => o.value === c.value)).length;
+    if (clearedCount > 0) {
+      const confirmed = await confirmAction({
+        title: `Remove ${cleared.map((o) => o.value).join(', ')}?`,
+        message: `${clearedCount} filled-in ${clearedCount === 1 ? 'cell uses' : 'cells use'} ${
+          cleared.length === 1 ? 'it' : 'them'
+        } and will be cleared.`,
+        confirmText: 'Remove',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setEditingChoices(false);
+    try {
+      await saveOptions(pageId, data.options, next);
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't save the choices", e instanceof Error ? e.message : undefined);
+      getPageData(pageId).then(setData).catch(() => {});
+    }
+  }
+
+  function handleReorderSections(sectionIds: string[]) {
+    saveLayout(
+      (d) => withSectionOrder(d, sectionIds),
+      () => reorderSections(sectionIds),
+    );
+  }
+
+  async function confirmDeleteSection(section: Section) {
+    const confirmed = await confirmAction({
+      title: `Delete ${section.title}?`,
+      message: 'Everyone’s rows in this section, and everything filled in on them, will be lost.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setOpenSectionId(null);
+    saveLayout(
+      (d) => withChange(d, { kind: 'section-removed', sectionId: section.id }),
+      () => deleteSection(section.id),
     );
   }
 
@@ -407,6 +569,7 @@ export default function PageScreen() {
 
   const hasRows = data.rows.length > 0;
   const openSection = data.sections.find((s) => s.id === openSectionId);
+  const usesChoices = data.sections.some((s) => s.cell_type === 'option');
   const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
   const overflows = gridWidth(data) > screen.width;
   const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
@@ -439,27 +602,61 @@ export default function PageScreen() {
         {/* 0: intro (scrolls away) */}
         <View style={styles.intro}>
           {data.page.instructions !== '' && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: showInstructions }}
-              onPress={() => setInstructionsToggled(!showInstructions)}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <ThemedText type="smallBold">How to fill this in</ThemedText>
+            <ThemedView type="backgroundElement" style={styles.card}>
+              {/* Separate buttons side by side: a button can't sit inside another. */}
+              <View style={styles.cardHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showInstructions }}
+                  onPress={() => setInstructionsToggled(!showInstructions)}
+                  style={styles.cardToggle}>
+                  <ThemedText type="smallBold" style={styles.cardTitle}>
+                    How to fill this in
+                  </ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {showInstructions ? 'Hide' : 'Show'}
                   </ThemedText>
-                </View>
-                {showInstructions && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {data.page.instructions}
-                  </ThemedText>
+                </Pressable>
+                {isAdmin && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit instructions"
+                    hitSlop={8}
+                    onPress={() => setRenaming({ kind: 'instructions' })}>
+                    <ThemedText type="small" style={{ color: theme.tint }}>
+                      Edit
+                    </ThemedText>
+                  </Pressable>
                 )}
-              </ThemedView>
+              </View>
+              {showInstructions && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {data.page.instructions}
+                </ThemedText>
+              )}
+            </ThemedView>
+          )}
+          {data.page.instructions === '' && isAdmin && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setRenaming({ kind: 'instructions' })}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                + Add instructions
+              </ThemedText>
             </Pressable>
           )}
           {data.options.length > 0 && (
-            <Legend options={data.options} />
+            <Legend
+              options={data.options}
+              onPress={isAdmin ? () => setEditingChoices(true) : undefined}
+            />
+          )}
+          {data.options.length === 0 && isAdmin && usesChoices && (
+            <Pressable accessibilityRole="button" onPress={() => setEditingChoices(true)}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                + Add choices
+              </ThemedText>
+            </Pressable>
           )}
           {!data.page.auto_members && (
             <ThemedText type="small" themeColor="textSecondary">
@@ -475,7 +672,11 @@ export default function PageScreen() {
         </View>
 
         {/* 1: sticky header */}
-        <GridHeader data={data} headerRef={headerRef} />
+        <GridHeader
+          data={data}
+          headerRef={headerRef}
+          onColumnsPress={isAdmin ? () => setEditingColumns(true) : undefined}
+        />
 
         {/* 2: grid */}
         <GridBody
@@ -486,6 +687,7 @@ export default function PageScreen() {
           onRowPress={(row, section) => setRenaming({ kind: 'row', row, section })}
           onSectionPress={(section) => setOpenSectionId(section.id)}
           onReorderRows={handleReorder}
+          onReorderSections={handleReorderSections}
           onDragChange={(active) => setScrollEnabled(!active)}
           onCellPress={handleCellPress}
           onCellLongPress={handleCellLongPress}
@@ -503,9 +705,16 @@ export default function PageScreen() {
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
             {isAdmin
-              ? '\nTap a section’s title to rename it or choose who’s in it. Tap a name to rename it, or hold it and slide up or down to move it.'
+              ? '\nTap a column, a section’s title, a name or the choices to edit them. Hold a title or name, then slide up or down to move it.'
               : ''}
           </ThemedText>
+          {isAdmin && (
+            <Button
+              title="Add a section"
+              variant="secondary"
+              onPress={() => setAddingSection(true)}
+            />
+          )}
           {isAdmin && (
             <ThemedView type="backgroundElement" style={styles.switchRow}>
               <View style={styles.switchText}>
@@ -529,15 +738,35 @@ export default function PageScreen() {
 
       {renaming && (
         <RenameSheet
-          key={renaming.kind === 'page' ? 'page' : renaming.row.id}
-          heading={renaming.kind === 'page' ? 'Page name' : `Name in ${renaming.section.title}`}
+          key={renaming.kind === 'row' ? renaming.row.id : renaming.kind}
+          heading={
+            renaming.kind === 'page'
+              ? 'Page name'
+              : renaming.kind === 'instructions'
+                ? 'How to fill this in'
+                : `Name in ${renaming.section.title}`
+          }
           note={
             renaming.kind === 'row' && renaming.row.user_id
               ? 'On Ovelo · renaming only changes how they appear on this page.'
               : undefined
           }
-          value={renaming.kind === 'page' ? data.page.title : renaming.row.label}
-          maxLength={renaming.kind === 'row' ? MAX_NAME_LENGTH : MAX_TITLE_LENGTH}
+          value={
+            renaming.kind === 'page'
+              ? data.page.title
+              : renaming.kind === 'instructions'
+                ? data.page.instructions
+                : renaming.row.label
+          }
+          maxLength={
+            renaming.kind === 'row'
+              ? MAX_NAME_LENGTH
+              : renaming.kind === 'instructions'
+                ? MAX_INSTRUCTIONS_LENGTH
+                : MAX_TITLE_LENGTH
+          }
+          multiline={renaming.kind === 'instructions'}
+          allowEmpty={renaming.kind === 'instructions'}
           onSave={handleRename}
           onClose={() => setRenaming(null)}
           removeLabel={renaming.kind === 'row' ? `Remove from ${renaming.section.title}` : undefined}
@@ -570,6 +799,38 @@ export default function PageScreen() {
           }}
           onRename={(title) => handleRenameSection(openSection.id, title)}
           onClose={() => setOpenSectionId(null)}
+          onDelete={
+            isAdmin && data.sections.length > 1
+              ? () => confirmDeleteSection(openSection)
+              : undefined
+          }
+        />
+      )}
+
+      {editingChoices && (
+        <ChoicesSheet
+          options={data.options}
+          required={usesChoices}
+          onSave={handleSaveChoices}
+          onClose={() => setEditingChoices(false)}
+        />
+      )}
+
+      {editingColumns && (
+        <ColumnsSheet
+          columnMode={data.page.column_mode}
+          columns={data.columns}
+          onSave={handleSaveColumns}
+          onClose={() => setEditingColumns(false)}
+        />
+      )}
+
+      {addingSection && (
+        <AddSectionSheet
+          existingTitles={data.sections.map((s) => s.title)}
+          hasChoices={data.options.length > 0}
+          onAdd={handleAddSection}
+          onClose={() => setAddingSection(false)}
         />
       )}
 
@@ -610,7 +871,17 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  cardToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  cardTitle: {
+    flex: 1,
   },
   footer: {
     gap: Spacing.three,

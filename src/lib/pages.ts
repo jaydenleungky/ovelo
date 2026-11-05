@@ -177,8 +177,151 @@ export async function renamePage(pageId: string, title: string) {
   check(await supabase.from('pages').update({ title }).eq('id', pageId));
 }
 
+export async function setInstructions(pageId: string, instructions: string) {
+  check(await supabase.from('pages').update({ instructions }).eq('id', pageId));
+}
+
+/** A choice as it should be after editing; no `id` means it's new. */
+export type OptionEdit = { id?: string; value: string; label: string; colour: string };
+
+/**
+ * Saves a page's edited choices, keeping filled-in cells in step:
+ * a changed short code (Y → P) is changed in every cell that used it, and a
+ * removed choice is cleared from the cells that used it.
+ */
+export async function saveOptions(pageId: string, original: Option[], next: OptionEdit[]) {
+  const before = new Map(original.map((o) => [o.id, o]));
+  const finalValues = new Set(next.map((o) => o.value));
+  const kept = next.filter((o) => o.id && before.has(o.id));
+  const keptIds = new Set(kept.map((o) => o.id));
+  const removed = original.filter((o) => !keptIds.has(o.id));
+  const renamed = kept.filter((o) => before.get(o.id!)!.value !== o.value);
+
+  // Choices: delete removed ones, then update the rest. Codes must stay unique
+  // on a page, so changed codes go through a placeholder first (e.g. Y ⇄ N).
+  if (removed.length > 0) {
+    check(await supabase.from('page_options').delete().in('id', removed.map((o) => o.id)));
+  }
+  for (const [i, o] of renamed.entries()) {
+    check(await supabase.from('page_options').update({ value: `~${i}` }).eq('id', o.id!));
+  }
+  const updates = kept.flatMap((o) => {
+    const old = before.get(o.id!)!;
+    const position = next.indexOf(o);
+    if (
+      old.value === o.value &&
+      old.label === o.label &&
+      old.colour === o.colour &&
+      old.position === position
+    ) {
+      return [];
+    }
+    return [
+      supabase
+        .from('page_options')
+        .update({ value: o.value, label: o.label, colour: o.colour, position })
+        .eq('id', o.id!),
+    ];
+  });
+  for (const result of await Promise.all(updates)) check(result);
+  const added = next.flatMap((o, position) =>
+    o.id && keptIds.has(o.id)
+      ? []
+      : [{ page_id: pageId, position, value: o.value, label: o.label, colour: o.colour }],
+  );
+  if (added.length > 0) check(await supabase.from('page_options').insert(added));
+
+  // Cells: clear removed codes that nothing uses now, then move renamed codes
+  // (through placeholders too, so swapping two codes works).
+  const cleared = removed.map((o) => o.value).filter((v) => !finalValues.has(v));
+  if (cleared.length > 0) {
+    check(await supabase.from('cells').delete().eq('page_id', pageId).in('value', cleared));
+  }
+  for (const [i, o] of renamed.entries()) {
+    const old = before.get(o.id!)!.value;
+    check(await supabase.from('cells').update({ value: `~${i}` }).eq('page_id', pageId).eq('value', old));
+  }
+  for (const [i, o] of renamed.entries()) {
+    check(await supabase.from('cells').update({ value: o.value }).eq('page_id', pageId).eq('value', `~${i}`));
+  }
+}
+
 export async function renameSection(sectionId: string, title: string) {
   check(await supabase.from('page_sections').update({ title }).eq('id', sectionId));
+}
+
+/**
+ * Adds a section to the end of a page. It holds people: on "everyone" pages
+ * the database fills it with the whole group straight away.
+ */
+export async function addSection(
+  pageId: string,
+  position: number,
+  title: string,
+  cellType: CellType,
+) {
+  check(
+    await supabase.from('page_sections').insert({
+      page_id: pageId,
+      position,
+      title,
+      cell_type: cellType,
+      notify: false,
+      auto_members: true,
+    }),
+  );
+}
+
+/** Deletes a section with all its rows and everything filled in on them. */
+export async function deleteSection(sectionId: string) {
+  check(await supabase.from('page_sections').delete().eq('id', sectionId));
+}
+
+/** Saves the page's new section order: `sectionIds` from top to bottom. */
+export async function reorderSections(sectionIds: string[]) {
+  const results = await Promise.all(
+    sectionIds.map((id, position) =>
+      supabase.from('page_sections').update({ position }).eq('id', id),
+    ),
+  );
+  for (const result of results) check(result);
+}
+
+/** A column as it should be after editing; no `id` means it's new. */
+export type ColumnEdit = { id?: string; position: number; label: string; date: string | null };
+
+/**
+ * Saves a page's edited columns. Columns missing from `next` are deleted
+ * along with everything filled in under them; the rest are added or updated.
+ */
+export async function saveColumns(pageId: string, original: Column[], next: ColumnEdit[]) {
+  const kept = new Set(next.flatMap((c) => (c.id ? [c.id] : [])));
+  const removed = original.filter((c) => !kept.has(c.id)).map((c) => c.id);
+  if (removed.length > 0) {
+    check(await supabase.from('page_columns').delete().in('id', removed));
+  }
+
+  const before = new Map(original.map((c) => [c.id, c]));
+  const updates = next.flatMap((c) => {
+    const old = c.id ? before.get(c.id) : undefined;
+    if (!c.id || !old || (old.label === c.label && old.position === c.position)) return [];
+    return [
+      supabase
+        .from('page_columns')
+        .update({ label: c.label, position: c.position })
+        .eq('id', c.id),
+    ];
+  });
+  for (const result of await Promise.all(updates)) check(result);
+
+  const added = next.filter((c) => !c.id);
+  if (added.length > 0) {
+    check(
+      await supabase
+        .from('page_columns')
+        .insert(added.map(({ position, label, date }) => ({ page_id: pageId, position, label, date }))),
+    );
+  }
 }
 
 export async function renameRow(rowId: string, label: string) {

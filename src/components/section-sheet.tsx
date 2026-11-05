@@ -37,6 +37,8 @@ type SectionSheetProps = {
   onToggle: (userId: string, inSection: boolean) => void;
   onRename: (title: string) => void;
   onClose: () => void;
+  /** Admins only. Missing when it's the page's only section. */
+  onDelete?: () => void;
 };
 
 const MAX_TITLE_LENGTH = 40;
@@ -50,6 +52,7 @@ export function SectionSheet({
   onToggle,
   onRename,
   onClose,
+  onDelete,
 }: SectionSheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -139,6 +142,16 @@ export function SectionSheet({
             )}
 
             <Button title="Done" onPress={done} />
+            {onDelete && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onDelete}
+                style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
+                  Delete section
+                </ThemedText>
+              </Pressable>
+            )}
           </ScrollView>
         </ThemedView>
       </KeyboardAvoidingView>
@@ -189,6 +202,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  deleteLink: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.two,
   },
   readOnly: {
     opacity: 0.5,

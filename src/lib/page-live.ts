@@ -1,6 +1,6 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
-import type { Cell, Page, Row, Section } from '@/lib/pages';
+import type { Cell, Column, Option, Page, Row, Section } from '@/lib/pages';
 import { supabase } from '@/lib/supabase';
 
 export type PageChange =
@@ -8,12 +8,19 @@ export type PageChange =
   | { kind: 'row'; row: Row }
   | { kind: 'row-removed'; rowId: string }
   | { kind: 'page'; page: Pick<Page, 'title' | 'instructions' | 'auto_members'> }
-  | { kind: 'section'; section: Section };
+  | { kind: 'section'; section: Section }
+  | { kind: 'section-removed'; sectionId: string }
+  | { kind: 'column'; column: Column }
+  | { kind: 'column-removed'; columnId: string }
+  | { kind: 'option'; option: Option }
+  | { kind: 'option-removed'; optionId: string };
 
 type CellRecord = Cell & { page_id: string };
 type RowRecord = Row & { page_id: string };
 type PageRecord = Page;
 type SectionRecord = Section & { page_id: string };
+type ColumnRecord = Column & { page_id: string };
+type OptionRecord = Option & { page_id: string };
 
 function toRow(r: RowRecord): Row {
   return {
@@ -27,7 +34,7 @@ function toRow(r: RowRecord): Row {
 
 /**
  * Listens for other people's changes to a page: its name and settings,
- * sections, rows and cells.
+ * columns, choices, sections, rows and cells.
  *
  * `onConnected` runs each time the connection is (re)made, e.g. after the
  * phone wakes up, so the caller can reload anything it missed meanwhile.
@@ -73,9 +80,30 @@ export function subscribeToPage(
   };
 
   const sectionChanged = (payload: RealtimePostgresChangesPayload<SectionRecord>) => {
-    if (payload.eventType === 'DELETE') return;
+    if (payload.eventType === 'DELETE') {
+      if (payload.old.id) onChange({ kind: 'section-removed', sectionId: payload.old.id });
+      return;
+    }
     const { id, position, title, cell_type, notify, auto_members } = payload.new;
     onChange({ kind: 'section', section: { id, position, title, cell_type, notify, auto_members } });
+  };
+
+  const columnChanged = (payload: RealtimePostgresChangesPayload<ColumnRecord>) => {
+    if (payload.eventType === 'DELETE') {
+      if (payload.old.id) onChange({ kind: 'column-removed', columnId: payload.old.id });
+      return;
+    }
+    const { id, position, label, date } = payload.new;
+    onChange({ kind: 'column', column: { id, position, label, date } });
+  };
+
+  const optionChanged = (payload: RealtimePostgresChangesPayload<OptionRecord>) => {
+    if (payload.eventType === 'DELETE') {
+      if (payload.old.id) onChange({ kind: 'option-removed', optionId: payload.old.id });
+      return;
+    }
+    const { id, position, value, label, colour } = payload.new;
+    onChange({ kind: 'option', option: { id, position, value, label, colour } });
   };
 
   const channel = supabase
@@ -117,8 +145,48 @@ export function subscribeToPage(
     )
     .on<SectionRecord>(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'page_sections', filter: onPage },
+      { event: 'INSERT', schema: 'public', table: 'page_sections', filter: onPage },
       sectionChanged,
+    )
+    .on<SectionRecord>(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'page_sections', filter: onPage },
+      sectionChanged,
+    )
+    .on<SectionRecord>(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'page_sections' },
+      sectionChanged,
+    )
+    .on<ColumnRecord>(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'page_columns', filter: onPage },
+      columnChanged,
+    )
+    .on<ColumnRecord>(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'page_columns', filter: onPage },
+      columnChanged,
+    )
+    .on<ColumnRecord>(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'page_columns' },
+      columnChanged,
+    )
+    .on<OptionRecord>(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'page_options', filter: onPage },
+      optionChanged,
+    )
+    .on<OptionRecord>(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'page_options', filter: onPage },
+      optionChanged,
+    )
+    .on<OptionRecord>(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'page_options' },
+      optionChanged,
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') onConnected();
