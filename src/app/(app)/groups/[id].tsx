@@ -17,6 +17,7 @@ import {
   getGroup,
   leaveGroup,
   listMembers,
+  newInviteCode,
   removeMember,
   setMemberRole,
   type Group,
@@ -100,6 +101,23 @@ export default function GroupScreen() {
       showMessage("Couldn't change their role", friendlyError(e));
     }
     reloadMembers();
+  }
+
+  async function confirmNewCode() {
+    if (!group) return;
+    const confirmed = await confirmAction({
+      title: 'Make a new invite code?',
+      message: `The current code, ${group.invite_code}, and any invite links using it will stop working. Everyone already in the group stays in.`,
+      confirmText: 'Make a new code',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      const code = await newInviteCode(group.id);
+      setGroup({ ...group, invite_code: code });
+    } catch (e) {
+      showMessage("Couldn't make a new code", friendlyError(e));
+    }
   }
 
   async function confirmRemove(member: Member) {
@@ -240,6 +258,16 @@ export default function GroupScreen() {
                 {group.invite_code}
               </ThemedText>
               <Button title="Share invite" onPress={handleShare} />
+            {iAmAdmin && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={confirmNewCode}
+                style={({ pressed }) => [styles.newCode, pressed && styles.pressed]}>
+                <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
+                  Make a new code
+                </ThemedText>
+              </Pressable>
+            )}
             </ThemedView>
 
             <View style={styles.section}>
@@ -378,6 +406,10 @@ const styles = StyleSheet.create({
   },
   memberName: {
     flex: 1,
+  },
+  newCode: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.one,
   },
   pressed: {
     opacity: 0.7,

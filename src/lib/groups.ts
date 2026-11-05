@@ -108,6 +108,17 @@ export async function removeMember(groupId: string, userId: string) {
 
 export const leaveGroup = removeMember;
 
+/**
+ * Replaces the group's invite code with a new random one. The old code and
+ * invite links using it stop working; people already in the group stay in.
+ * Admins only. Returns the new code.
+ */
+export async function newInviteCode(groupId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('new_invite_code', { gid: groupId });
+  if (error) throw error;
+  return data as string;
+}
+
 /** Makes a member an admin, or an admin a member. Admins only. */
 export async function setMemberRole(groupId: string, userId: string, role: Role) {
   const { error } = await supabase
