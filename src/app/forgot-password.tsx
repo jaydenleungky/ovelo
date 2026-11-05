@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -63,6 +64,7 @@ export default function ForgotPasswordScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           style={styles.container}
@@ -143,14 +145,14 @@ export default function ForgotPasswordScreen() {
                       setError(null);
                     }}
                     style={styles.link}>
-                    <ThemedText type="small" style={{ color: theme.tint }}>
+                    <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                       Didn’t get it? Check your spam folder, or send a new code
                     </ThemedText>
                   </Pressable>
                 )}
                 {!isResettingPassword && (
                   <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.link}>
-                    <ThemedText type="small" style={{ color: theme.tint }}>
+                    <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                       Back to sign in
                     </ThemedText>
                   </Pressable>

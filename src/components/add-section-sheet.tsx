@@ -63,7 +63,7 @@ export function AddSectionSheet({ existingTitles, hasChoices, onAdd, onClose }: 
               setTitle(text);
               setError(null);
             }}
-            placeholder="e.g. Violinists"
+            placeholder="e.g. Helpers"
             autoFocus
             maxLength={MAX_TITLE_LENGTH}
             returnKeyType="done"
@@ -83,12 +83,12 @@ export function AddSectionSheet({ existingTitles, hasChoices, onAdd, onClose }: 
               <ThemedText type="small" themeColor="textSecondary">
                 {cellType === 'option'
                   ? 'People pick one of this page’s choices in each cell.'
-                  : 'People type anything in a cell, e.g. “Dad 2–5pm”.'}
+                  : 'People type anything in a cell, e.g. “2–5pm”.'}
               </ThemedText>
             </View>
           ) : (
             <ThemedText type="small" themeColor="textSecondary">
-              People type anything in a cell, e.g. “Dad 2–5pm”.
+              People type anything in a cell, e.g. “2–5pm”.
             </ThemedText>
           )}
 

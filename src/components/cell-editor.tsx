@@ -108,7 +108,7 @@ export function CellEditor({ target, options, onSave, onClose }: CellEditorProps
               accessibilityLabel={`${target.rowLabel}, ${target.columnLabel}`}
               value={text}
               onChangeText={setText}
-              placeholder="e.g. Dad 2–5pm"
+              placeholder="e.g. 2–5pm"
               autoFocus
               maxLength={MAX_TEXT_LENGTH}
               returnKeyType="done"

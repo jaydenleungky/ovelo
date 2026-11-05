@@ -254,7 +254,7 @@ function LabelEditor({ value, onChange }: PickerProps) {
         accessibilityRole="button"
         onPress={() => onChange([...value, { position: value.length, label: '', date: null }])}
         style={styles.addLink}>
-        <ThemedText type="small" style={{ color: theme.tint }}>
+        <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
           + Add a column
         </ThemedText>
       </Pressable>

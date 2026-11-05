@@ -4,16 +4,36 @@ import { useEffect } from 'react';
 import { StyleSheet, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 
 SplashScreen.preventAutoHideAsync();
+
+// Navigation headers and screen backgrounds in Ovelo's colours.
+function navigationTheme(base: typeof DefaultTheme, colors: (typeof Colors)['light' | 'dark']) {
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: colors.tint,
+      background: colors.background,
+      card: colors.background,
+      text: colors.text,
+      border: colors.border,
+      notification: colors.tint,
+    },
+  };
+}
+
+const LIGHT_NAVIGATION = navigationTheme(DefaultTheme, Colors.light);
+const DARK_NAVIGATION = navigationTheme(DarkTheme, Colors.dark);
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     // Gestures such as dragging names to reorder them need this at the root.
     <GestureHandlerRootView style={styles.root}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={colorScheme === 'dark' ? DARK_NAVIGATION : LIGHT_NAVIGATION}>
         <AuthProvider>
           <RootNavigator />
         </AuthProvider>

@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { Button } from '@/components/button';
 import { MemberSheet } from '@/components/member-sheet';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -167,6 +168,7 @@ export default function GroupScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <Stack.Screen options={{ title: group.name }} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -256,7 +258,7 @@ export default function GroupScreen() {
 
           <Button
             title={isLastMember ? 'Delete group' : 'Leave group'}
-            variant="secondary"
+            variant="danger"
             onPress={confirmLeave}
             loading={busy}
           />

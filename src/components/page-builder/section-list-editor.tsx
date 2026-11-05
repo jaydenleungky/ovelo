@@ -71,7 +71,7 @@ export function SectionListEditor({ sections, onChange }: SectionListEditorProps
           <ThemedText type="small" themeColor="textSecondary">
             {section.cellType === 'option'
               ? 'Tap a cell to pick one of the choices below, e.g. Y or N.'
-              : 'Type anything in a cell, e.g. “Dad 2–5pm”.'}
+              : 'Type anything in a cell, e.g. “2–5pm”.'}
           </ThemedText>
 
         </ThemedView>
@@ -81,7 +81,7 @@ export function SectionListEditor({ sections, onChange }: SectionListEditorProps
         accessibilityRole="button"
         onPress={() => onChange([...sections, NEW_SECTION])}
         style={styles.addLink}>
-        <ThemedText type="small" style={{ color: theme.tint }}>
+        <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
           + Add a section
         </ThemedText>
       </Pressable>

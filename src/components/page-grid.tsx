@@ -9,6 +9,7 @@ import {
   type NativeSyntheticEvent,
   type ScrollViewInstance,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   GestureDetector,
   useExclusiveGestures,
@@ -105,6 +106,14 @@ export function GridHeader({ data, headerRef, onColumnsPress }: HeaderProps) {
                 highlight && { backgroundColor: theme.tint },
                 pressed && styles.pressed,
               ]}>
+              {/* Today's column glows from the accent into a brighter coral. */}
+              {highlight && (
+                <LinearGradient
+                  colors={[theme.tint, theme.tintEnd]}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+              )}
               <ThemedText
                 type="smallBold"
                 numberOfLines={2}
@@ -255,10 +264,18 @@ function SectionTitle({
         style={[
           styles.nameCell,
           styles.sectionCell,
-          { borderColor: theme.border, backgroundColor: theme.backgroundSelected },
+          { borderColor: theme.border, backgroundColor: theme.backgroundElement },
           dragging && styles.dragging,
           dragging && { transform: [{ translateY: offset }] },
         ]}>
+        {/* The section bar starts sky blue and fades across the grid. */}
+        <LinearGradient
+          colors={[theme.sky, theme.backgroundElement]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
         <ThemedText type="smallBold" numberOfLines={1} style={styles.nameText}>
           {title}
         </ThemedText>
@@ -316,6 +333,14 @@ export function GridBody({
   function updateDrag(next: Drag | null) {
     dragRef.current = next;
     setDrag(next);
+  }
+  // Fade the grid's right edge while there are more columns to scroll to.
+  const [atEnd, setAtEnd] = useState(true);
+  const widths = useRef({ view: 0, content: 0, x: 0 });
+  function updateEdge() {
+    const { view, content, x } = widths.current;
+    const end = content <= view + 1 || x + view >= content - 2;
+    setAtEnd((was) => (was === end ? was : end));
   }
   const [sectionDrag, setSectionDrag] = useState<SectionDrag | null>(null);
   const sectionDragRef = useRef<SectionDrag | null>(null);
@@ -417,13 +442,12 @@ export function GridBody({
       />,
     );
     right.push(
-      <View
+      <LinearGradient
         key={`s-${section.id}`}
-        style={[
-          styles.sectionCell,
-          line,
-          { backgroundColor: theme.backgroundSelected, width: data.columns.length * width },
-        ]}
+        colors={[theme.backgroundElement, theme.background]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={[styles.sectionCell, line, { width: data.columns.length * width }]}
       />,
     );
 
@@ -512,7 +536,19 @@ export function GridBody({
       </View>
       <ScrollView
         horizontal
-        onScroll={onBodyScroll}
+        onScroll={(e) => {
+          onBodyScroll(e);
+          widths.current.x = e.nativeEvent.contentOffset.x;
+          updateEdge();
+        }}
+        onLayout={(e) => {
+          widths.current.view = e.nativeEvent.layout.width;
+          updateEdge();
+        }}
+        onContentSizeChange={(contentWidth) => {
+          widths.current.content = contentWidth;
+          updateEdge();
+        }}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}>
         <View>
@@ -521,6 +557,15 @@ export function GridBody({
           ))}
         </View>
       </ScrollView>
+      {!atEnd && (
+        <LinearGradient
+          colors={[`${theme.background}00`, theme.background]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.edgeFade}
+          pointerEvents="none"
+        />
+      )}
       {dropLineTop !== null && (
         <View
           pointerEvents="none"
@@ -556,7 +601,7 @@ export function Legend({ options, onPress }: { options: Option[]; onPress?: () =
         </View>
       ))}
       {onPress && (
-        <ThemedText type="small" style={{ color: theme.tint }}>
+        <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
           Edit
         </ThemedText>
       )}
@@ -580,6 +625,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: Spacing.two,
+    // Keeps today's glow inside the rounded corners.
+    overflow: 'hidden',
   },
   headerText: {
     textAlign: 'center',
@@ -648,6 +695,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  edgeFade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: 32,
   },
   dropLine: {
     position: 'absolute',
