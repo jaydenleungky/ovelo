@@ -7,6 +7,13 @@ type AuthContextValue = {
   session: Session | null;
   /** True until the saved session (if any) has been loaded from the device. */
   isLoading: boolean;
+  /**
+   * True between entering a reset code (which signs you in) and saving the
+   * new password, so the reset screen stays open until it's done.
+   */
+  isResettingPassword: boolean;
+  /** Checks the emailed code, then sets the new password. */
+  resetPassword: (email: string, code: string, password: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -14,6 +21,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   useEffect(() => {
     // Fires once on start with the saved session, then on every sign-in/out.
@@ -26,7 +34,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => subscription.unsubscribe();
   }, []);
 
-  return <AuthContext value={{ session, isLoading }}>{children}</AuthContext>;
+  async function resetPassword(email: string, code: string, password: string) {
+    // Flag this first: verifying the code signs you in straight away.
+    setIsResettingPassword(true);
+    if (!session) {
+      const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+      if (error) {
+        setIsResettingPassword(false);
+        throw error;
+      }
+    }
+    // If this fails you're signed in but still on the reset screen to retry.
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    setIsResettingPassword(false);
+  }
+
+  return (
+    <AuthContext value={{ session, isLoading, isResettingPassword, resetPassword }}>
+      {children}
+    </AuthContext>
+  );
 }
 
 export function useAuth() {
@@ -52,6 +80,12 @@ export async function signUp(email: string, password: string, displayName: strin
   });
   if (error) throw error;
   return data.session === null;
+}
+
+/** Emails a code for resetting a forgotten password. */
+export async function sendPasswordResetCode(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) throw error;
 }
 
 export async function signOut() {
