@@ -1,5 +1,5 @@
 import { Link, router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -22,6 +22,7 @@ import {
   type Group,
   type Member,
 } from '@/lib/groups';
+import { friendlyError } from '@/lib/errors';
 import { inviteMessage } from '@/lib/invites';
 import { listPages, type PageSummary } from '@/lib/pages';
 
@@ -48,6 +49,8 @@ export default function GroupScreen() {
   const [members, setMembers] = useState<Member[]>([]);
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // "Try again" runs the latest load again.
+  const retry = useRef<(() => void) | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -61,15 +64,19 @@ export default function GroupScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      Promise.all([getGroup(id), listMembers(id), listPages(id)])
-        .then(([g, m, p]) => {
-          if (!active) return;
-          setGroup(g);
-          setMembers(m);
-          setPages(p);
-          setError(null);
-        })
-        .catch((e: Error) => active && setError(e.message));
+      function load() {
+        Promise.all([getGroup(id), listMembers(id), listPages(id)])
+          .then(([g, m, p]) => {
+            if (!active) return;
+            setGroup(g);
+            setMembers(m);
+            setPages(p);
+            setError(null);
+          })
+          .catch((e: unknown) => active && setError(friendlyError(e)));
+      }
+      retry.current = load;
+      load();
       return () => {
         active = false;
       };
@@ -90,7 +97,7 @@ export default function GroupScreen() {
     try {
       await setMemberRole(id, member.user_id, role);
     } catch (e) {
-      showMessage("Couldn't change their role", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't change their role", friendlyError(e));
     }
     reloadMembers();
   }
@@ -108,7 +115,7 @@ export default function GroupScreen() {
     try {
       await removeMember(id, member.user_id);
     } catch (e) {
-      showMessage("Couldn't remove them", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't remove them", friendlyError(e));
     }
     reloadMembers();
   }
@@ -147,14 +154,21 @@ export default function GroupScreen() {
       router.back();
     } catch (e) {
       setBusy(false);
-      showMessage('Something went wrong', e instanceof Error ? e.message : undefined);
+      showMessage('Something went wrong', friendlyError(e));
     }
   }
 
   if (error) {
     return (
       <ThemedView style={[styles.container, styles.centered]}>
-        <ThemedText style={{ color: theme.danger }}>{error}</ThemedText>
+        <ThemedText style={{ color: theme.danger, textAlign: 'center' }}>{error}</ThemedText>
+        <Button
+          title="Try again"
+          onPress={() => {
+            setError(null);
+            retry.current?.();
+          }}
+        />
         <Button title="Go back" variant="secondary" onPress={() => router.back()} />
       </ThemedView>
     );

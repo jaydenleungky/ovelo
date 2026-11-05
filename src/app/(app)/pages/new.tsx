@@ -14,6 +14,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/errors';
 import { createPageFromTemplate } from '@/lib/pages';
 import {
   DEFAULT_ROSTER_SECTIONS,
@@ -128,7 +129,7 @@ export default function NewPageScreen() {
       });
       router.replace(`/pages/${pageId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the page.');
+      setError(friendlyError(e, 'Could not create the page.'));
       setSubmitting(false);
     }
   }

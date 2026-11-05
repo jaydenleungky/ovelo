@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/errors';
 import { createGroup } from '@/lib/groups';
 
 export default function NewGroupScreen() {
@@ -27,7 +28,7 @@ export default function NewGroupScreen() {
       const group = await createGroup(name.trim());
       router.replace(`/groups/${group.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the group.');
+      setError(friendlyError(e, 'Could not create the group.'));
       setSubmitting(false);
     }
   }
