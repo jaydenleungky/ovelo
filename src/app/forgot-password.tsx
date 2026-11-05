@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { sendPasswordResetCode, useAuth } from '@/lib/auth';
+import { friendlyError } from '@/lib/errors';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -36,7 +37,7 @@ export default function ForgotPasswordScreen() {
       await sendPasswordResetCode(email.trim());
       setStep('code');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send the code. Please try again.');
+      setError(friendlyError(e, 'Could not send the code. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -57,7 +58,7 @@ export default function ForgotPasswordScreen() {
       await resetPassword(email.trim(), digits, password);
       // Done: you're signed in, and the app switches to your groups.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setError(friendlyError(e, 'Something went wrong. Please try again.'));
       setSubmitting(false);
     }
   }

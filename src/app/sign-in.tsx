@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { signIn, signInWithGoogle, signUp } from '@/lib/auth';
+import { friendlyError } from '@/lib/errors';
 import { hasPendingInvite } from '@/lib/pending-invite';
 
 type Mode = 'sign-in' | 'sign-up';
@@ -67,7 +68,7 @@ export default function SignInScreen() {
       // On success the auth listener updates the session and the app
       // switches to the signed-in screens automatically.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setError(friendlyError(e, 'Something went wrong. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -82,7 +83,7 @@ export default function SignInScreen() {
       // Signed in: the auth listener switches to the app. (On the web the
       // page has already gone to Google.)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Google sign-in didn’t work. Please try again.');
+      setError(friendlyError(e, 'Google sign-in didn’t work. Please try again.'));
     } finally {
       setGoogleBusy(false);
     }

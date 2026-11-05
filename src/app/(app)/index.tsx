@@ -1,5 +1,5 @@
 import { Link, router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useWideScreen } from '@/hooks/use-wide-screen';
 import { deleteMyAccount, signOut, useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
+import { friendlyError } from '@/lib/errors';
 import { listMyGroups, type MyGroup } from '@/lib/groups';
 import { takePendingInvite } from '@/lib/pending-invite';
 import { MAX_DISPLAY_NAME_LENGTH, getMyDisplayName, setDisplayName } from '@/lib/profile';
@@ -24,6 +25,8 @@ export default function HomeScreen() {
   const userId = session?.user.id;
   const [groups, setGroups] = useState<MyGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // "Try again" runs the latest load again.
+  const retry = useRef<(() => void) | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
 
@@ -39,14 +42,18 @@ export default function HomeScreen() {
     useCallback(() => {
       if (!userId) return;
       let active = true;
-      Promise.all([listMyGroups(userId), getMyDisplayName(userId)])
-        .then(([result, displayName]) => {
-          if (!active) return;
-          setGroups(result);
-          setName(displayName);
-          setError(null);
-        })
-        .catch((e: Error) => active && setError(e.message));
+      function load() {
+        Promise.all([listMyGroups(userId!), getMyDisplayName(userId!)])
+          .then(([result, displayName]) => {
+            if (!active) return;
+            setGroups(result);
+            setName(displayName);
+            setError(null);
+          })
+          .catch((e: unknown) => active && setError(friendlyError(e)));
+      }
+      retry.current = load;
+      load();
       return () => {
         active = false;
       };
@@ -60,7 +67,7 @@ export default function HomeScreen() {
       await setDisplayName(next);
     } catch (e) {
       setName(previous);
-      showMessage("Couldn't change your name", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't change your name", friendlyError(e));
     }
   }
 
@@ -77,7 +84,7 @@ export default function HomeScreen() {
       await deleteMyAccount();
       // Signed out, so the app returns to the sign-in screen.
     } catch (e) {
-      showMessage("Couldn't delete your account", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't delete your account", friendlyError(e));
     }
   }
 
@@ -85,7 +92,7 @@ export default function HomeScreen() {
     try {
       await signOut();
     } catch (e) {
-      showMessage('Could not sign out', e instanceof Error ? e.message : undefined);
+      showMessage('Could not sign out', friendlyError(e));
     }
   }
 
@@ -98,9 +105,19 @@ export default function HomeScreen() {
             <ThemedText type="subtitle">Your groups</ThemedText>
 
             {error && (
-              <ThemedText type="small" style={{ color: theme.danger }}>
-                Couldn&apos;t load your groups: {error}
-              </ThemedText>
+              <View style={styles.list}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
+                  Couldn&apos;t load your groups. {error}
+                </ThemedText>
+                <Button
+                  title="Try again"
+                  variant="secondary"
+                  onPress={() => {
+                    setError(null);
+                    retry.current?.();
+                  }}
+                />
+              </View>
             )}
 
             {groups === null && !error && <ActivityIndicator />}

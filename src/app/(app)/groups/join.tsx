@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/errors';
 import { joinGroup } from '@/lib/groups';
 import { INVITE_CODE_LENGTH as CODE_LENGTH, cleanInviteCode } from '@/lib/invites';
 
@@ -31,7 +32,7 @@ export default function JoinGroupScreen() {
       const group = await joinGroup(code);
       router.replace(`/groups/${group.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not join the group.');
+      setError(friendlyError(e, 'Could not join the group.'));
       setSubmitting(false);
     }
   }

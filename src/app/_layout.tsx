@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { StyleSheet, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { OfflineBanner } from '@/components/offline-banner';
 import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 
@@ -36,6 +37,7 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DARK_NAVIGATION : LIGHT_NAVIGATION}>
         <AuthProvider>
           <RootNavigator />
+          <OfflineBanner />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

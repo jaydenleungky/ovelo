@@ -35,6 +35,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useWideScreen } from '@/hooks/use-wide-screen';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
+import { friendlyError } from '@/lib/errors';
 import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
 import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
@@ -182,6 +183,8 @@ export default function PageScreen() {
   const [role, setRole] = useState<Role | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // "Try again" runs the latest load again.
+  const retry = useRef<(() => void) | null>(null);
   // null = not toggled yet: start open, except on short (landscape) screens
   // where the card would push the grid out of view.
   const [instructionsToggled, setInstructionsToggled] = useState<boolean | null>(null);
@@ -222,7 +225,7 @@ export default function PageScreen() {
             setRole(myRole);
             setError(null);
           })
-          .catch((e: Error) => active && setError(e.message));
+          .catch((e: unknown) => active && setError(friendlyError(e)));
       }
 
       function isOwnEcho(key: string, value: string) {
@@ -248,6 +251,7 @@ export default function PageScreen() {
         setData((d) => (d ? withChange(d, change) : d));
       }
 
+      retry.current = load;
       load();
       // Also reloads on every (re)connect, to catch up on anything missed
       // while the phone was asleep or offline.
@@ -307,7 +311,7 @@ export default function PageScreen() {
         const list = unconfirmed.current.get(key);
         list?.splice(list.indexOf(value), 1);
         showCellLocally(rowId, columnId, previous);
-        showMessage("Couldn't save that change", e.message);
+        showMessage("Couldn't save that change", friendlyError(e));
       });
     pendingSaves.current.set(key, save);
   }
@@ -347,7 +351,7 @@ export default function PageScreen() {
     try {
       await save();
     } catch (e) {
-      showMessage("Couldn't save that change", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't save that change", friendlyError(e));
       getPageData(pageId)
         .then(setData)
         .catch(() => {});
@@ -413,7 +417,7 @@ export default function PageScreen() {
       // The new row's id comes from the database; it also arrives live.
       setData(await getPageData(pageId));
     } catch (e) {
-      showMessage(`Couldn't add ${name}`, e instanceof Error ? e.message : undefined);
+      showMessage(`Couldn't add ${name}`, friendlyError(e));
     }
   }
 
@@ -425,7 +429,7 @@ export default function PageScreen() {
       // The section (and, on "everyone" pages, its people) also arrive live.
       setData(await getPageData(pageId));
     } catch (e) {
-      showMessage("Couldn't add the section", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't add the section", friendlyError(e));
     }
   }
 
@@ -453,7 +457,7 @@ export default function PageScreen() {
       // New columns get their ids from the database; they also arrive live.
       setData(await getPageData(pageId));
     } catch (e) {
-      showMessage("Couldn't save the columns", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't save the columns", friendlyError(e));
       getPageData(pageId)
         .then(setData)
         .catch(() => {});
@@ -482,7 +486,7 @@ export default function PageScreen() {
       await saveOptions(pageId, data.options, next);
       setData(await getPageData(pageId));
     } catch (e) {
-      showMessage("Couldn't save the choices", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't save the choices", friendlyError(e));
       getPageData(pageId)
         .then(setData)
         .catch(() => {});
@@ -538,7 +542,7 @@ export default function PageScreen() {
       const fresh = await getPageData(pageId);
       setData(fresh);
     } catch (e) {
-      showMessage("Couldn't save that change", e instanceof Error ? e.message : undefined);
+      showMessage("Couldn't save that change", friendlyError(e));
     } finally {
       setSavingMembers((s) => {
         const next = new Set(s);
@@ -589,14 +593,21 @@ export default function PageScreen() {
       await deletePage(data.page.id);
       router.back();
     } catch (e) {
-      showMessage('Could not delete', e instanceof Error ? e.message : undefined);
+      showMessage('Could not delete', friendlyError(e));
     }
   }
 
   if (error) {
     return (
       <ThemedView style={[styles.container, styles.centered]}>
-        <ThemedText style={{ color: theme.danger }}>{error}</ThemedText>
+        <ThemedText style={{ color: theme.danger, textAlign: 'center' }}>{error}</ThemedText>
+        <Button
+          title="Try again"
+          onPress={() => {
+            setError(null);
+            retry.current?.();
+          }}
+        />
         <Button title="Go back" variant="secondary" onPress={() => router.back()} />
       </ThemedView>
     );
