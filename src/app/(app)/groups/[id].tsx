@@ -207,7 +207,9 @@ export default function GroupScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scroll}>
         <View style={[styles.content, wide && styles.contentWide]}>
           <View style={[styles.section, wide && styles.mainWide]}>
-            <ThemedText type="smallBold">Pages</ThemedText>
+            <ThemedText type="smallBold" accessibilityRole="header">
+              Pages
+            </ThemedText>
             {pages.length === 0 && (
               <ThemedView type="backgroundElement" style={styles.card}>
                 <ThemedText type="small" themeColor="textSecondary">
@@ -221,6 +223,8 @@ export default function GroupScreen() {
               {pages.map((page) => (
                 <Link key={page.id} href={`/pages/${page.id}`} asChild>
                   <Pressable
+                    accessibilityRole="link"
+                    accessibilityLabel={`${page.title}, ${COLUMN_MODE_LABEL[page.column_mode].toLowerCase()}`}
                     style={({ pressed }) => [wide && styles.gridItem, pressed && styles.pressed]}>
                     <ThemedView type="backgroundElement" style={styles.pageRow}>
                       <ThemedText style={styles.pageEmoji}>
@@ -250,7 +254,9 @@ export default function GroupScreen() {
 
           <View style={[styles.side, wide && styles.sideWide]}>
             <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="smallBold">Invite code</ThemedText>
+              <ThemedText type="smallBold" accessibilityRole="header">
+                Invite code
+              </ThemedText>
               <ThemedText
                 style={styles.code}
                 selectable
@@ -271,7 +277,7 @@ export default function GroupScreen() {
             </ThemedView>
 
             <View style={styles.section}>
-              <ThemedText type="smallBold">Members ({members.length})</ThemedText>
+              <ThemedText type="smallBold" accessibilityRole="header">Members ({members.length})</ThemedText>
               {iAmAdmin && members.length > 1 && (
                 <ThemedText type="small" themeColor="textSecondary">
                   Tap someone to make them an admin or remove them from the group.

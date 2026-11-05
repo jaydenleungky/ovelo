@@ -119,6 +119,12 @@ export async function signUp(email: string, password: string, displayName: strin
     options: { data: { display_name: displayName } },
   });
   if (error) throw error;
+  // With email confirmation on, Supabase doesn't say an email is taken (so
+  // nobody can find out who has an account); it returns a user with no
+  // identities instead, and sends no email. Say so rather than "check your inbox".
+  if (data.user && data.user.identities?.length === 0) {
+    throw new Error('There’s already an account with that email. Try signing in, or reset your password.');
+  }
   return data.session === null;
 }
 

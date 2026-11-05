@@ -8,6 +8,7 @@ export type PageChange =
   | { kind: 'row'; row: Row }
   | { kind: 'row-removed'; rowId: string }
   | { kind: 'page'; page: Pick<Page, 'title' | 'instructions' | 'auto_members'> }
+  | { kind: 'page-removed' }
   | { kind: 'section'; section: Section }
   | { kind: 'section-removed'; sectionId: string }
   | { kind: 'column'; column: Column }
@@ -74,6 +75,11 @@ export function subscribeToPage(
   };
 
   const pageChanged = (payload: RealtimePostgresChangesPayload<PageRecord>) => {
+    // Deletes can't be filtered, so check it's this page that went.
+    if (payload.eventType === 'DELETE') {
+      if (payload.old.id === pageId) onChange({ kind: 'page-removed' });
+      return;
+    }
     if (payload.eventType !== 'UPDATE') return;
     const { title, instructions, auto_members } = payload.new;
     onChange({ kind: 'page', page: { title, instructions, auto_members } });
@@ -141,6 +147,11 @@ export function subscribeToPage(
     .on<PageRecord>(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'pages', filter: `id=eq.${pageId}` },
+      pageChanged,
+    )
+    .on<PageRecord>(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'pages' },
       pageChanged,
     )
     .on<SectionRecord>(

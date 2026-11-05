@@ -19,6 +19,8 @@ const KNOWN: [RegExp, string][] = [
   [/jwt expired|invalid jwt|session.*(expired|missing)|refresh token/, 'Your sign-in has expired. Please sign out and sign in again.'],
   [/row-level security|permission denied|not authorized|42501/, 'You don’t have permission to do that. Ask a group admin.'],
   [/duplicate key|already exists|23505/, 'That already exists.'],
+  [/_length\b/, 'That’s too long. Please make it shorter.'],
+  [/check constraint|23514/, 'That isn’t allowed. Check what you entered and try again.'],
   [/json object requested|no rows|pgrst116/, 'That couldn’t be found. It may have been deleted.'],
 ];
 

@@ -99,6 +99,9 @@ function withChange(data: PageData, change: PageChange): PageData {
         rows: data.rows.filter((r) => r.id !== change.rowId),
         cells: data.cells.filter((c) => c.row_id !== change.rowId),
       };
+    case 'page-removed':
+      // Handled by leaving the page; nothing to change here.
+      return data;
     case 'page':
       return { ...data, page: { ...data.page, ...change.page } };
     case 'section': {
@@ -185,6 +188,8 @@ export default function PageScreen() {
   const [error, setError] = useState<string | null>(null);
   // "Try again" runs the latest load again.
   const retry = useRef<(() => void) | null>(null);
+  // Set while this person deletes the page, so it isn't announced to them too.
+  const deleting = useRef(false);
   // null = not toggled yet: start open, except on short (landscape) screens
   // where the card would push the grid out of view.
   const [instructionsToggled, setInstructionsToggled] = useState<boolean | null>(null);
@@ -240,6 +245,13 @@ export default function PageScreen() {
       }
 
       function applyChange(change: PageChange) {
+        // Someone else deleted this page (or its group): say so and leave.
+        if (change.kind === 'page-removed') {
+          if (deleting.current) return;
+          showMessage('This page was deleted', 'Someone in the group deleted it.');
+          router.back();
+          return;
+        }
         // Choice codes pass through "~0"-style placeholders while being
         // changed; skip those so they don't flash up on screen.
         if (change.kind === 'cell' && change.value.startsWith('~')) return;
@@ -590,9 +602,11 @@ export default function PageScreen() {
     });
     if (!confirmed) return;
     try {
+      deleting.current = true;
       await deletePage(data.page.id);
       router.back();
     } catch (e) {
+      deleting.current = false;
       showMessage('Could not delete', friendlyError(e));
     }
   }
