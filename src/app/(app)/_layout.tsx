@@ -3,6 +3,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/use-theme';
 
+// Links straight to an inner screen (e.g. an invite link opening the join
+// screen) still get the home screen underneath, so back has somewhere to go.
+export const unstable_settings = {
+  anchor: 'index',
+};
+
 // Screens in (app) are only reachable while signed in (see the root layout).
 export default function AppLayout() {
   const theme = useTheme();

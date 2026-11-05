@@ -21,6 +21,7 @@ import {
   type Group,
   type Member,
 } from '@/lib/groups';
+import { inviteMessage } from '@/lib/invites';
 import { listPages, type PageSummary } from '@/lib/pages';
 
 const TEMPLATE_EMOJI: Record<PageSummary['template'], string> = {
@@ -111,9 +112,7 @@ export default function GroupScreen() {
 
   async function handleShare() {
     if (!group) return;
-    await shareText(
-      `Join "${group.name}" on Ovelo! Open the app, tap "Join with a code" and enter: ${group.invite_code}`,
-    );
+    await shareText(inviteMessage(group.name, group.invite_code));
   }
 
   async function confirmLeave() {

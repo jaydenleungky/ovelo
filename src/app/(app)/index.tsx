@@ -1,5 +1,5 @@
 import { Link, router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { deleteMyAccount, signOut, useAuth } from '@/lib/auth';
 import { confirmAction, showMessage } from '@/lib/dialogs';
 import { listMyGroups, type MyGroup } from '@/lib/groups';
+import { takePendingInvite } from '@/lib/pending-invite';
 import { MAX_DISPLAY_NAME_LENGTH, getMyDisplayName, setDisplayName } from '@/lib/profile';
 
 export default function HomeScreen() {
@@ -22,6 +23,12 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
+
+  // Arrived from an invite link before signing in: carry on to joining.
+  useEffect(() => {
+    const code = takePendingInvite();
+    if (code) router.push({ pathname: '/groups/join', params: { code } });
+  }, []);
 
   // Reload whenever this screen comes back into view, e.g. after
   // creating, joining or leaving a group.
