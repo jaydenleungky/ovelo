@@ -8,7 +8,8 @@ export type PageChange =
   | { kind: 'row'; row: Row }
   | { kind: 'row-removed'; rowId: string }
   | { kind: 'page'; page: Pick<Page, 'title' | 'instructions' | 'auto_members'> }
-  | { kind: 'section'; section: Section };
+  | { kind: 'section'; section: Section }
+  | { kind: 'section-removed'; sectionId: string };
 
 type CellRecord = Cell & { page_id: string };
 type RowRecord = Row & { page_id: string };
@@ -73,7 +74,10 @@ export function subscribeToPage(
   };
 
   const sectionChanged = (payload: RealtimePostgresChangesPayload<SectionRecord>) => {
-    if (payload.eventType === 'DELETE') return;
+    if (payload.eventType === 'DELETE') {
+      if (payload.old.id) onChange({ kind: 'section-removed', sectionId: payload.old.id });
+      return;
+    }
     const { id, position, title, cell_type, notify, auto_members } = payload.new;
     onChange({ kind: 'section', section: { id, position, title, cell_type, notify, auto_members } });
   };
@@ -117,7 +121,17 @@ export function subscribeToPage(
     )
     .on<SectionRecord>(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'page_sections', filter: onPage },
+      { event: 'INSERT', schema: 'public', table: 'page_sections', filter: onPage },
+      sectionChanged,
+    )
+    .on<SectionRecord>(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'page_sections', filter: onPage },
+      sectionChanged,
+    )
+    .on<SectionRecord>(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'page_sections' },
       sectionChanged,
     )
     .subscribe((status) => {

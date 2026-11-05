@@ -181,6 +181,43 @@ export async function renameSection(sectionId: string, title: string) {
   check(await supabase.from('page_sections').update({ title }).eq('id', sectionId));
 }
 
+/**
+ * Adds a section to the end of a page. It holds people: on "everyone" pages
+ * the database fills it with the whole group straight away.
+ */
+export async function addSection(
+  pageId: string,
+  position: number,
+  title: string,
+  cellType: CellType,
+) {
+  check(
+    await supabase.from('page_sections').insert({
+      page_id: pageId,
+      position,
+      title,
+      cell_type: cellType,
+      notify: false,
+      auto_members: true,
+    }),
+  );
+}
+
+/** Deletes a section with all its rows and everything filled in on them. */
+export async function deleteSection(sectionId: string) {
+  check(await supabase.from('page_sections').delete().eq('id', sectionId));
+}
+
+/** Saves the page's new section order: `sectionIds` from top to bottom. */
+export async function reorderSections(sectionIds: string[]) {
+  const results = await Promise.all(
+    sectionIds.map((id, position) =>
+      supabase.from('page_sections').update({ position }).eq('id', id),
+    ),
+  );
+  for (const result of results) check(result);
+}
+
 export async function renameRow(rowId: string, label: string) {
   check(await supabase.from('page_rows').update({ label }).eq('id', rowId));
 }

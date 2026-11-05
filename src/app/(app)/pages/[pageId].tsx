@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { AddSectionSheet } from '@/components/add-section-sheet';
 import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
@@ -25,13 +26,16 @@ import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
 import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
+  addSection,
   deletePage,
+  deleteSection,
   getPageData,
   removeRow,
   renamePage,
   renameRow,
   renameSection,
   reorderRows,
+  reorderSections,
   setCell,
   setPageEveryone,
   setSectionMember,
@@ -81,7 +85,27 @@ function withChange(data: PageData, change: PageChange): PageData {
       const sections = [...others, change.section].sort((a, b) => a.position - b.position);
       return { ...data, sections };
     }
+    case 'section-removed': {
+      // Deletes arrive for every page, so skip sections that aren't on this one.
+      if (!data.sections.some((s) => s.id === change.sectionId)) return data;
+      const gone = new Set(data.rows.filter((r) => r.section_id === change.sectionId).map((r) => r.id));
+      return {
+        ...data,
+        sections: data.sections.filter((s) => s.id !== change.sectionId),
+        rows: data.rows.filter((r) => !gone.has(r.id)),
+        cells: data.cells.filter((c) => !gone.has(c.row_id)),
+      };
+    }
   }
+}
+
+/** The page with its sections put in a new order. */
+function withSectionOrder(data: PageData, sectionIds: string[]): PageData {
+  const positions = new Map(sectionIds.map((id, position) => [id, position]));
+  const sections = data.sections
+    .map((s) => ({ ...s, position: positions.get(s.id) ?? s.position }))
+    .sort((a, b) => a.position - b.position);
+  return { ...data, sections };
 }
 
 /** The page with a section's rows put in a new order. */
@@ -112,6 +136,7 @@ export default function PageScreen() {
   const [renaming, setRenaming] = useState<Renaming | null>(null);
   // The section whose sheet is open (by id, so live renames show in it).
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  const [addingSection, setAddingSection] = useState(false);
   // "sectionId:userId" for section changes still saving.
   const [savingMembers, setSavingMembers] = useState<Set<string>>(new Set());
   // Off while a name is being dragged, so the page stays still.
@@ -311,6 +336,40 @@ export default function PageScreen() {
     );
   }
 
+  async function handleAddSection(title: string, cellType: Section['cell_type']) {
+    if (!data) return;
+    const position = data.sections.reduce((max, s) => Math.max(max, s.position + 1), 0);
+    try {
+      await addSection(pageId, position, title, cellType);
+      // The section (and, on "everyone" pages, its people) also arrive live.
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't add the section", e instanceof Error ? e.message : undefined);
+    }
+  }
+
+  function handleReorderSections(sectionIds: string[]) {
+    saveLayout(
+      (d) => withSectionOrder(d, sectionIds),
+      () => reorderSections(sectionIds),
+    );
+  }
+
+  async function confirmDeleteSection(section: Section) {
+    const confirmed = await confirmAction({
+      title: `Delete ${section.title}?`,
+      message: 'Everyone’s rows in this section, and everything filled in on them, will be lost.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setOpenSectionId(null);
+    saveLayout(
+      (d) => withChange(d, { kind: 'section-removed', sectionId: section.id }),
+      () => deleteSection(section.id),
+    );
+  }
+
   /** Ticks someone in or out of a section. The new row arrives as a live update. */
   async function toggleSectionMember(section: Section, member: Member, inSection: boolean) {
     if (!inSection) {
@@ -486,6 +545,7 @@ export default function PageScreen() {
           onRowPress={(row, section) => setRenaming({ kind: 'row', row, section })}
           onSectionPress={(section) => setOpenSectionId(section.id)}
           onReorderRows={handleReorder}
+          onReorderSections={handleReorderSections}
           onDragChange={(active) => setScrollEnabled(!active)}
           onCellPress={handleCellPress}
           onCellLongPress={handleCellLongPress}
@@ -503,9 +563,16 @@ export default function PageScreen() {
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
             {isAdmin
-              ? '\nTap a section’s title to rename it or choose who’s in it. Tap a name to rename it, or hold it and slide up or down to move it.'
+              ? '\nTap a section’s title or a name to edit it. Hold either one, then slide up or down to move it.'
               : ''}
           </ThemedText>
+          {isAdmin && (
+            <Button
+              title="Add a section"
+              variant="secondary"
+              onPress={() => setAddingSection(true)}
+            />
+          )}
           {isAdmin && (
             <ThemedView type="backgroundElement" style={styles.switchRow}>
               <View style={styles.switchText}>
@@ -570,6 +637,20 @@ export default function PageScreen() {
           }}
           onRename={(title) => handleRenameSection(openSection.id, title)}
           onClose={() => setOpenSectionId(null)}
+          onDelete={
+            isAdmin && data.sections.length > 1
+              ? () => confirmDeleteSection(openSection)
+              : undefined
+          }
+        />
+      )}
+
+      {addingSection && (
+        <AddSectionSheet
+          existingTitles={data.sections.map((s) => s.title)}
+          hasChoices={data.options.length > 0}
+          onAdd={handleAddSection}
+          onClose={() => setAddingSection(false)}
         />
       )}
 
