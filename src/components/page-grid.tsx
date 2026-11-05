@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useRef, useState } from 'react';
 import {
   Animated,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,12 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Column, Option, PageData, Row, Section } from '@/lib/pages';
-import {
-  ON_CHOICE_COLOUR,
-  formatColumnDate,
-  toDateString,
-  weekdayIndex,
-} from '@/lib/templates';
+import { ON_CHOICE_COLOUR, formatColumnDate, toDateString, weekdayIndex } from '@/lib/templates';
 
 const NAME_WIDTH = 136;
 const COLUMN_WIDTH = 64;
@@ -39,13 +35,40 @@ const ROW_HEIGHT = 44;
 // How long to hold a name before it can be dragged.
 const DRAG_DELAY_MS = 300;
 
+// With a mouse (a computer's browser), click and drag straight away: there's
+// no page scrolling to mix it up with. Touch screens hold first, so a swipe
+// still scrolls the page.
+export const USES_MOUSE =
+  Platform.OS === 'web' &&
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+// (Written as two plain values: the gesture library can't read a spread here.)
+const DRAG_LONG_PRESS_MS = USES_MOUSE ? undefined : DRAG_DELAY_MS;
+const DRAG_MIN_DISTANCE = USES_MOUSE ? 4 : undefined;
+/** The hand cursor over things you can drag, on computers. */
+const GRAB_CURSOR = USES_MOUSE ? ({ cursor: 'grab' } as const) : null;
+
 function columnWidth(columnMode: PageData['page']['column_mode']) {
   return columnMode === 'custom' ? CUSTOM_COLUMN_WIDTH : COLUMN_WIDTH;
 }
 
+// Columns widen to use spare space (e.g. on a laptop), up to this width.
+const MAX_COLUMN_WIDTH = 140;
+
+/**
+ * How wide each column should be for a screen this wide: the usual width,
+ * or wider when there's room, so the grid fills the screen.
+ */
+export function fittedColumnWidth(data: PageData, screenWidth: number) {
+  const base = columnWidth(data.page.column_mode);
+  if (data.columns.length === 0) return base;
+  const fit = Math.floor((screenWidth - NAME_WIDTH) / data.columns.length);
+  return Math.max(base, Math.min(MAX_COLUMN_WIDTH, fit));
+}
+
 /** Total width of the grid, to tell whether it fits on screen. */
-export function gridWidth(data: PageData) {
-  return NAME_WIDTH + data.columns.length * columnWidth(data.page.column_mode);
+export function gridWidth(data: PageData, width = columnWidth(data.page.column_mode)) {
+  return NAME_WIDTH + data.columns.length * width;
 }
 
 /**
@@ -71,9 +94,12 @@ type HeaderProps = {
   headerRef: React.RefObject<ScrollViewInstance | null>;
   /** Admins: tap any column header to edit the columns. */
   onColumnsPress?: () => void;
+  /** Column width, e.g. from fittedColumnWidth. */
+  width?: number;
 };
 
-export function GridHeader({ data, headerRef, onColumnsPress }: HeaderProps) {
+export function GridHeader({ data, headerRef, onColumnsPress, width }: HeaderProps) {
+  const colWidth = width ?? columnWidth(data.page.column_mode);
   const theme = useTheme();
   const today = new Date();
 
@@ -102,7 +128,7 @@ export function GridHeader({ data, headerRef, onColumnsPress }: HeaderProps) {
               onPress={onColumnsPress}
               style={({ pressed }) => [
                 styles.headerCell,
-                { width: columnWidth(data.page.column_mode) },
+                { width: colWidth },
                 highlight && { backgroundColor: theme.tint },
                 pressed && styles.pressed,
               ]}>
@@ -167,7 +193,8 @@ function NameCell({
   const pan = usePanGesture({
     enabled,
     runOnJS: true,
-    activateAfterLongPress: DRAG_DELAY_MS,
+    activateAfterLongPress: DRAG_LONG_PRESS_MS,
+    minDistance: DRAG_MIN_DISTANCE,
     onActivate: () => {
       offset.setValue(0);
       onDragStart();
@@ -188,11 +215,16 @@ function NameCell({
     <GestureDetector gesture={gesture} userSelect="none">
       <Animated.View
         accessibilityRole={enabled ? 'button' : undefined}
-        accessibilityLabel={enabled ? `${row.label}. Tap to rename, hold to move.` : row.label}
+        accessibilityLabel={
+          enabled
+            ? `${row.label}. Tap to rename, ${USES_MOUSE ? 'drag' : 'hold'} to move.`
+            : row.label
+        }
         style={[
           styles.nameCell,
           styles.rowCell,
           { borderColor: theme.border },
+          enabled && GRAB_CURSOR,
           dragging && [styles.dragging, { backgroundColor: theme.backgroundSelected }],
           { transform: [{ translateY: dragging ? offset : shift }] },
         ]}>
@@ -235,7 +267,8 @@ function SectionTitle({
   const pan = usePanGesture({
     enabled: canDrag,
     runOnJS: true,
-    activateAfterLongPress: DRAG_DELAY_MS,
+    activateAfterLongPress: DRAG_LONG_PRESS_MS,
+    minDistance: DRAG_MIN_DISTANCE,
     onActivate: () => {
       offset.setValue(0);
       onDragStart();
@@ -252,7 +285,10 @@ function SectionTitle({
   const tap = useTapGesture({ enabled: canTap, runOnJS: true, onActivate: onPress });
   const gesture = useExclusiveGestures(pan, tap);
 
-  const hint = [canTap && "Tap to choose who's in it.", canDrag && 'Hold to move.']
+  const hint = [
+    canTap && "Tap to choose who's in it.",
+    canDrag && (USES_MOUSE ? 'Drag to move.' : 'Hold to move.'),
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -265,6 +301,7 @@ function SectionTitle({
           styles.nameCell,
           styles.sectionCell,
           { borderColor: theme.border, backgroundColor: theme.backgroundElement },
+          canDrag && GRAB_CURSOR,
           dragging && styles.dragging,
           dragging && { transform: [{ translateY: offset }] },
         ]}>
@@ -310,6 +347,8 @@ type BodyProps = {
   onDragChange: (active: boolean) => void;
   onCellPress: (row: Row, column: Column, section: Section) => void;
   onCellLongPress: (row: Row, column: Column, section: Section) => void;
+  /** Column width, e.g. from fittedColumnWidth. */
+  width?: number;
 };
 
 export function GridBody({
@@ -324,6 +363,7 @@ export function GridBody({
   onDragChange,
   onCellPress,
   onCellLongPress,
+  width: widthProp,
 }: BodyProps) {
   const theme = useTheme();
   const today = new Date();
@@ -356,7 +396,7 @@ export function GridBody({
     rowsBySection.set(row.section_id, [...(rowsBySection.get(row.section_id) ?? []), row]);
   }
   const todayColumnId = data.columns.find((c) => isToday(c, data.page.column_mode, today))?.id;
-  const width = columnWidth(data.page.column_mode);
+  const width = widthProp ?? columnWidth(data.page.column_mode);
   const line = { borderColor: theme.border };
 
   // A solid tile filling the cell, with a thin gap so neighbours stay separate.
@@ -368,9 +408,7 @@ export function GridBody({
           styles.choiceTile,
           { backgroundColor: option?.colour ?? theme.backgroundSelected },
         ]}>
-        <ThemedText
-          type="smallBold"
-          style={{ color: option ? ON_CHOICE_COLOUR : theme.text }}>
+        <ThemedText type="smallBold" style={{ color: option ? ON_CHOICE_COLOUR : theme.text }}>
           {value}
         </ThemedText>
       </View>
@@ -523,7 +561,12 @@ export function GridBody({
           </ThemedText>
         </View>,
       );
-      right.push(<View key={`e-${section.id}`} style={[styles.rowCell, line, { width: data.columns.length * width }]} />);
+      right.push(
+        <View
+          key={`e-${section.id}`}
+          style={[styles.rowCell, line, { width: data.columns.length * width }]}
+        />,
+      );
     }
   });
 

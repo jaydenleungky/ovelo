@@ -1,20 +1,11 @@
 import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { LegendEditor } from '@/components/page-builder/legend-editor';
+import { Sheet } from '@/components/sheet';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Option, OptionEdit } from '@/lib/pages';
 
@@ -29,7 +20,6 @@ type ChoicesSheetProps = {
 /** Edit the choices people pick in a page's cells. Nothing changes until Save. */
 export function ChoicesSheet({ options, required, onSave, onClose }: ChoicesSheetProps) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const [next, setNext] = useState<OptionEdit[]>(options);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,68 +52,28 @@ export function ChoicesSheet({ options, required, onSave, onClose }: ChoicesShee
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-        />
-        <ThemedView
-          style={[
-            styles.sheet,
-            { paddingBottom: Spacing.four + insets.bottom, borderColor: theme.border },
-          ]}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <LegendEditor options={next} onChange={handleChange} />
-            <ThemedText type="small" themeColor="textSecondary">
-              Changing a code updates every cell that uses it. Removing a choice clears the cells
-              that use it.
-            </ThemedText>
+    <Sheet onClose={onClose} scroll>
+      <LegendEditor options={next} onChange={handleChange} />
+      <ThemedText type="small" themeColor="textSecondary">
+        Changing a code updates every cell that uses it. Removing a choice clears the cells
+        that use it.
+      </ThemedText>
 
-            {error && (
-              <ThemedText type="small" style={{ color: theme.danger }} accessibilityRole="alert">
-                {error}
-              </ThemedText>
-            )}
+      {error && (
+        <ThemedText type="small" style={{ color: theme.danger }} accessibilityRole="alert">
+          {error}
+        </ThemedText>
+      )}
 
-            <View style={styles.actions}>
-              <Button title="Save" onPress={save} />
-              <Button title="Cancel" variant="secondary" onPress={onClose} />
-            </View>
-          </ScrollView>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </Modal>
+      <View style={styles.actions}>
+        <Button title="Save" onPress={save} />
+        <Button title="Cancel" variant="secondary" onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  // Dim the whole screen, including beside a narrow sheet on wide screens.
-  fill: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  backdrop: {
-    flex: 1,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    maxHeight: '85%',
-    alignSelf: 'center',
-    borderTopLeftRadius: Spacing.four,
-    borderTopRightRadius: Spacing.four,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
-  },
-  content: {
-    gap: Spacing.three,
-    padding: Spacing.four,
-  },
   actions: {
     gap: Spacing.two,
   },

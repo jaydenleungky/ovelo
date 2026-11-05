@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useWideScreen } from '@/hooks/use-wide-screen';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, shareText, showMessage } from '@/lib/dialogs';
 import {
@@ -38,6 +39,8 @@ const COLUMN_MODE_LABEL: Record<PageSummary['column_mode'], string> = {
 
 export default function GroupScreen() {
   const theme = useTheme();
+  // Wide screens: pages on the left, invite code and members in a side panel.
+  const wide = useWideScreen();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
   const userId = session?.user.id;
@@ -169,11 +172,9 @@ export default function GroupScreen() {
     <ThemedView style={styles.container}>
       <ScreenFade />
       <Stack.Screen options={{ title: group.name }} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.scroll}>
-        <View style={styles.content}>
-          <View style={styles.section}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scroll}>
+        <View style={[styles.content, wide && styles.contentWide]}>
+          <View style={[styles.section, wide && styles.mainWide]}>
             <ThemedText type="smallBold">Pages</ThemedText>
             {pages.length === 0 && (
               <ThemedView type="backgroundElement" style={styles.card}>
@@ -184,83 +185,96 @@ export default function GroupScreen() {
                 </ThemedText>
               </ThemedView>
             )}
-            {pages.map((page) => (
-              <Link key={page.id} href={`/pages/${page.id}`} asChild>
-                <Pressable style={({ pressed }) => pressed && styles.pressed}>
-                  <ThemedView type="backgroundElement" style={styles.pageRow}>
-                    <ThemedText style={styles.pageEmoji}>{TEMPLATE_EMOJI[page.template]}</ThemedText>
-                    <View style={styles.pageText}>
-                      <ThemedText type="smallBold">{page.title}</ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {COLUMN_MODE_LABEL[page.column_mode]}
+            <View style={wide ? styles.grid : styles.section}>
+              {pages.map((page) => (
+                <Link key={page.id} href={`/pages/${page.id}`} asChild>
+                  <Pressable
+                    style={({ pressed }) => [wide && styles.gridItem, pressed && styles.pressed]}>
+                    <ThemedView type="backgroundElement" style={styles.pageRow}>
+                      <ThemedText style={styles.pageEmoji}>
+                        {TEMPLATE_EMOJI[page.template]}
                       </ThemedText>
-                    </View>
-                    <ThemedText themeColor="textSecondary">›</ThemedText>
-                  </ThemedView>
-                </Pressable>
-              </Link>
-            ))}
+                      <View style={styles.pageText}>
+                        <ThemedText type="smallBold">{page.title}</ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {COLUMN_MODE_LABEL[page.column_mode]}
+                        </ThemedText>
+                      </View>
+                      <ThemedText themeColor="textSecondary">›</ThemedText>
+                    </ThemedView>
+                  </Pressable>
+                </Link>
+              ))}
+            </View>
             {me?.role === 'admin' && (
               <Button
                 title="New page"
-                onPress={() => router.push({ pathname: '/pages/new', params: { groupId: group.id } })}
+                onPress={() =>
+                  router.push({ pathname: '/pages/new', params: { groupId: group.id } })
+                }
               />
             )}
           </View>
 
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="smallBold">Invite code</ThemedText>
-            <ThemedText style={styles.code} selectable accessibilityLabel={`Invite code ${group.invite_code.split('').join(' ')}`}>
-              {group.invite_code}
-            </ThemedText>
-            <Button title="Share invite" onPress={handleShare} />
-          </ThemedView>
-
-          <View style={styles.section}>
-            <ThemedText type="smallBold">
-              Members ({members.length})
-            </ThemedText>
-            {iAmAdmin && members.length > 1 && (
-              <ThemedText type="small" themeColor="textSecondary">
-                Tap someone to make them an admin or remove them from the group.
+          <View style={[styles.side, wide && styles.sideWide]}>
+            <ThemedView type="backgroundElement" style={styles.card}>
+              <ThemedText type="smallBold">Invite code</ThemedText>
+              <ThemedText
+                style={styles.code}
+                selectable
+                accessibilityLabel={`Invite code ${group.invite_code.split('').join(' ')}`}>
+                {group.invite_code}
               </ThemedText>
-            )}
-            <ThemedView type="backgroundElement" style={styles.list}>
-              {members.map((member, index) => (
-                <Pressable
-                  key={member.user_id}
-                  disabled={!iAmAdmin}
-                  accessibilityRole={iAmAdmin ? 'button' : undefined}
-                  accessibilityLabel={`${member.display_name}${member.user_id === userId ? ' (you)' : ''}${
-                    member.role === 'admin' ? ', admin' : ''
-                  }${iAmAdmin ? '. Tap to manage.' : ''}`}
-                  onPress={() => setSelectedId(member.user_id)}
-                  style={({ pressed }) => [
-                    styles.memberRow,
-                    index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.border },
-                    pressed && styles.pressed,
-                  ]}>
-                  <ThemedText style={styles.memberName}>
-                    {member.display_name}
-                    {member.user_id === userId ? ' (you)' : ''}
-                  </ThemedText>
-                  {member.role === 'admin' && (
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Admin
-                    </ThemedText>
-                  )}
-                  {iAmAdmin && <ThemedText themeColor="textSecondary"> ›</ThemedText>}
-                </Pressable>
-              ))}
+              <Button title="Share invite" onPress={handleShare} />
             </ThemedView>
-          </View>
 
-          <Button
-            title={isLastMember ? 'Delete group' : 'Leave group'}
-            variant="danger"
-            onPress={confirmLeave}
-            loading={busy}
-          />
+            <View style={styles.section}>
+              <ThemedText type="smallBold">Members ({members.length})</ThemedText>
+              {iAmAdmin && members.length > 1 && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  Tap someone to make them an admin or remove them from the group.
+                </ThemedText>
+              )}
+              <ThemedView type="backgroundElement" style={styles.list}>
+                {members.map((member, index) => (
+                  <Pressable
+                    key={member.user_id}
+                    disabled={!iAmAdmin}
+                    accessibilityRole={iAmAdmin ? 'button' : undefined}
+                    accessibilityLabel={`${member.display_name}${member.user_id === userId ? ' (you)' : ''}${
+                      member.role === 'admin' ? ', admin' : ''
+                    }${iAmAdmin ? '. Tap to manage.' : ''}`}
+                    onPress={() => setSelectedId(member.user_id)}
+                    style={({ pressed }) => [
+                      styles.memberRow,
+                      index > 0 && {
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderColor: theme.border,
+                      },
+                      pressed && styles.pressed,
+                    ]}>
+                    <ThemedText style={styles.memberName}>
+                      {member.display_name}
+                      {member.user_id === userId ? ' (you)' : ''}
+                    </ThemedText>
+                    {member.role === 'admin' && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Admin
+                      </ThemedText>
+                    )}
+                    {iAmAdmin && <ThemedText themeColor="textSecondary"> ›</ThemedText>}
+                  </Pressable>
+                ))}
+              </ThemedView>
+            </View>
+
+            <Button
+              title={isLastMember ? 'Delete group' : 'Leave group'}
+              variant="danger"
+              onPress={confirmLeave}
+              loading={busy}
+            />
+          </View>
         </View>
       </ScrollView>
 
@@ -277,6 +291,8 @@ export default function GroupScreen() {
     </ThemedView>
   );
 }
+
+const WIDE_CONTENT_WIDTH = 1100;
 
 const styles = StyleSheet.create({
   container: {
@@ -296,6 +312,29 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     gap: Spacing.four,
+  },
+  contentWide: {
+    maxWidth: WIDE_CONTENT_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  mainWide: {
+    flex: 2,
+  },
+  side: {
+    gap: Spacing.four,
+  },
+  sideWide: {
+    flex: 1,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  gridItem: {
+    flexBasis: '45%',
+    flexGrow: 1,
   },
   card: {
     gap: Spacing.two,
