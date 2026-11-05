@@ -324,6 +324,23 @@ export async function saveColumns(pageId: string, original: Column[], next: Colu
   }
 }
 
+/**
+ * Adds a row with just a name, for someone who isn't on Ovelo (e.g.
+ * "Grandma") or an extra fixed row (e.g. "Van"). Admins only.
+ */
+export async function addNamedRow(
+  pageId: string,
+  sectionId: string,
+  position: number,
+  label: string,
+) {
+  check(
+    await supabase
+      .from('page_rows')
+      .insert({ page_id: pageId, section_id: sectionId, position, label, user_id: null }),
+  );
+}
+
 export async function renameRow(rowId: string, label: string) {
   check(await supabase.from('page_rows').update({ label }).eq('id', rowId));
 }
