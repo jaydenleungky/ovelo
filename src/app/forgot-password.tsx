@@ -73,7 +73,9 @@ export default function ForgotPasswordScreen() {
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <View style={styles.content}>
               <View style={styles.header}>
-                <ThemedText type="subtitle">Reset your password</ThemedText>
+                <ThemedText type="subtitle" accessibilityRole="header">
+                  Reset your password
+                </ThemedText>
                 <ThemedText themeColor="textSecondary">
                   {step === 'email'
                     ? 'We’ll email you a code to set a new password.'

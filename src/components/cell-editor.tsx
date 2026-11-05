@@ -42,7 +42,7 @@ export function CellEditor({ target, options, onSave, onClose }: CellEditorProps
   }
 
   return (
-    <Sheet onClose={onClose}>
+    <Sheet onClose={onClose} scroll>
       <View style={styles.header}>
         <ThemedText type="smallBold">{target.rowLabel}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">

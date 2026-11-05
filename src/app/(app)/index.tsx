@@ -102,7 +102,9 @@ export default function HomeScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scroll}>
         <View style={[styles.content, wide && styles.contentWide]}>
           <View style={[styles.main, wide && styles.mainWide]}>
-            <ThemedText type="subtitle">Your groups</ThemedText>
+            <ThemedText type="subtitle" accessibilityRole="header">
+              Your groups
+            </ThemedText>
 
             {error && (
               <View style={styles.list}>
@@ -136,6 +138,8 @@ export default function HomeScreen() {
               {groups?.map((group) => (
                 <Link key={group.id} href={`/groups/${group.id}`} asChild>
                   <Pressable
+                    accessibilityRole="link"
+                    accessibilityLabel={`${group.name}, ${group.role === 'admin' ? 'admin' : 'member'}`}
                     style={({ pressed }) => [wide && styles.gridItem, pressed && styles.pressed]}>
                     <ThemedView type="backgroundElement" style={[styles.card, styles.groupRow]}>
                       <View style={styles.groupText}>

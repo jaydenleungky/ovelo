@@ -13,6 +13,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { signIn, signInWithGoogle, signUp } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { hasPendingInvite } from '@/lib/pending-invite';
+import { MAX_DISPLAY_NAME_LENGTH } from '@/lib/profile';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -99,7 +100,9 @@ export default function SignInScreen() {
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <View style={styles.content}>
               <View style={styles.header}>
-                <ThemedText type="title">Ovelo</ThemedText>
+                <ThemedText type="title" accessibilityRole="header">
+                  Ovelo
+                </ThemedText>
                 <ThemedText themeColor="textSecondary">
                   Plan meals and rosters together.
                 </ThemedText>
@@ -156,6 +159,7 @@ export default function SignInScreen() {
                     autoComplete="name"
                     textContentType="name"
                     returnKeyType="next"
+                    maxLength={MAX_DISPLAY_NAME_LENGTH}
                   />
                 )}
                 <TextField
