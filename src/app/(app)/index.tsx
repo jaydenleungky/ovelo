@@ -160,6 +160,14 @@ export default function HomeScreen() {
                 Delete account
               </ThemedText>
             </Pressable>
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.push('/privacy')}
+              style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}>
+              <ThemedText type="small" themeColor="textSecondary">
+                Privacy policy
+              </ThemedText>
+            </Pressable>
           </View>
         </View>
       </ScrollView>

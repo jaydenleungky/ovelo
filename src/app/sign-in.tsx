@@ -195,6 +195,15 @@ export default function SignInScreen() {
                   </Pressable>
                 )}
               </View>
+
+              <Pressable
+                accessibilityRole="link"
+                onPress={() => router.push('/privacy')}
+                style={styles.link}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Privacy policy
+                </ThemedText>
+              </Pressable>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
