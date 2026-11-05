@@ -532,9 +532,19 @@ export function GridBody({
 }
 
 /** The colour key, e.g. "Y Prefer · N Not available". */
-export function Legend({ options }: { options: Option[] }) {
+export function Legend({ options, onPress }: { options: Option[]; onPress?: () => void }) {
+  const theme = useTheme();
   return (
-    <View style={styles.legend}>
+    <Pressable
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={
+        onPress
+          ? `Choices: ${options.map((o) => `${o.value} ${o.label}`).join(', ')}. Tap to edit.`
+          : undefined
+      }
+      onPress={onPress}
+      style={({ pressed }) => [styles.legend, pressed && styles.pressed]}>
       {options.map((option) => (
         <View key={option.id} style={styles.legendItem}>
           <View style={[styles.legendTile, { backgroundColor: option.colour }]}>
@@ -545,7 +555,12 @@ export function Legend({ options }: { options: Option[] }) {
           <ThemedText type="small">{option.label}</ThemedText>
         </View>
       ))}
-    </View>
+      {onPress && (
+        <ThemedText type="small" style={{ color: theme.tint }}>
+          Edit
+        </ThemedText>
+      )}
+    </Pressable>
   );
 }
 
@@ -656,6 +671,7 @@ const styles = StyleSheet.create({
   legend: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     gap: Spacing.three,
   },
   legendItem: {

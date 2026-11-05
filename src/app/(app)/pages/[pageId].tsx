@@ -14,6 +14,7 @@ import {
 import { AddSectionSheet } from '@/components/add-section-sheet';
 import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
+import { ChoicesSheet } from '@/components/choices-sheet';
 import { ColumnsSheet } from '@/components/columns-sheet';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
 import { RenameSheet } from '@/components/rename-sheet';
@@ -38,7 +39,10 @@ import {
   reorderRows,
   reorderSections,
   saveColumns,
+  saveOptions,
+  setInstructions,
   type ColumnEdit,
+  type OptionEdit,
   setCell,
   setPageEveryone,
   setSectionMember,
@@ -54,7 +58,11 @@ const MAX_TITLE_LENGTH = 60;
 const MAX_NAME_LENGTH = 40;
 
 /** What the rename sheet is open for. */
-type Renaming = { kind: 'page' } | { kind: 'row'; row: Row; section: Section };
+type Renaming =
+  | { kind: 'page' }
+  | { kind: 'instructions' }
+  | { kind: 'row'; row: Row; section: Section };
+const MAX_INSTRUCTIONS_LENGTH = 500;
 
 /** The page with one live change from someone else applied. */
 function withChange(data: PageData, change: PageChange): PageData {
@@ -91,6 +99,13 @@ function withChange(data: PageData, change: PageChange): PageData {
     case 'column':
     case 'column-removed':
       return withColumnChange(data, change);
+    case 'option': {
+      const others = data.options.filter((o) => o.id !== change.option.id);
+      const options = [...others, change.option].sort((a, b) => a.position - b.position);
+      return { ...data, options };
+    }
+    case 'option-removed':
+      return { ...data, options: data.options.filter((o) => o.id !== change.optionId) };
     case 'section-removed': {
       // Deletes arrive for every page, so skip sections that aren't on this one.
       if (!data.sections.some((s) => s.id === change.sectionId)) return data;
@@ -160,6 +175,7 @@ export default function PageScreen() {
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [addingSection, setAddingSection] = useState(false);
   const [editingColumns, setEditingColumns] = useState(false);
+  const [editingChoices, setEditingChoices] = useState(false);
   // "sectionId:userId" for section changes still saving.
   const [savingMembers, setSavingMembers] = useState<Set<string>>(new Set());
   // Off while a name is being dragged, so the page stays still.
@@ -205,6 +221,10 @@ export default function PageScreen() {
       }
 
       function applyChange(change: PageChange) {
+        // Choice codes pass through "~0"-style placeholders while being
+        // changed; skip those so they don't flash up on screen.
+        if (change.kind === 'cell' && change.value.startsWith('~')) return;
+        if (change.kind === 'option' && change.option.value.startsWith('~')) return;
         if (change.kind === 'cell') {
           const key = `${change.rowId}:${change.columnId}`;
           if (isOwnEcho(key, change.value)) return;
@@ -323,6 +343,11 @@ export default function PageScreen() {
         (d) => ({ ...d, page: { ...d.page, title: value } }),
         () => renamePage(pageId, value),
       );
+    } else if (renaming.kind === 'instructions') {
+      saveLayout(
+        (d) => ({ ...d, page: { ...d.page, instructions: value } }),
+        () => setInstructions(pageId, value),
+      );
     } else {
       const { id } = renaming.row;
       saveLayout(
@@ -395,6 +420,33 @@ export default function PageScreen() {
       setData(await getPageData(pageId));
     } catch (e) {
       showMessage("Couldn't save the columns", e instanceof Error ? e.message : undefined);
+      getPageData(pageId).then(setData).catch(() => {});
+    }
+  }
+
+  async function handleSaveChoices(next: OptionEdit[]) {
+    if (!data) return;
+    const keptIds = new Set(next.flatMap((o) => (o.id ? [o.id] : [])));
+    const finalValues = new Set(next.map((o) => o.value));
+    const cleared = data.options.filter((o) => !keptIds.has(o.id) && !finalValues.has(o.value));
+    const clearedCount = data.cells.filter((c) => cleared.some((o) => o.value === c.value)).length;
+    if (clearedCount > 0) {
+      const confirmed = await confirmAction({
+        title: `Remove ${cleared.map((o) => o.value).join(', ')}?`,
+        message: `${clearedCount} filled-in ${clearedCount === 1 ? 'cell uses' : 'cells use'} ${
+          cleared.length === 1 ? 'it' : 'them'
+        } and will be cleared.`,
+        confirmText: 'Remove',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setEditingChoices(false);
+    try {
+      await saveOptions(pageId, data.options, next);
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't save the choices", e instanceof Error ? e.message : undefined);
       getPageData(pageId).then(setData).catch(() => {});
     }
   }
@@ -517,6 +569,7 @@ export default function PageScreen() {
 
   const hasRows = data.rows.length > 0;
   const openSection = data.sections.find((s) => s.id === openSectionId);
+  const usesChoices = data.sections.some((s) => s.cell_type === 'option');
   const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
   const overflows = gridWidth(data) > screen.width;
   const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
@@ -549,27 +602,61 @@ export default function PageScreen() {
         {/* 0: intro (scrolls away) */}
         <View style={styles.intro}>
           {data.page.instructions !== '' && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: showInstructions }}
-              onPress={() => setInstructionsToggled(!showInstructions)}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <ThemedText type="smallBold">How to fill this in</ThemedText>
+            <ThemedView type="backgroundElement" style={styles.card}>
+              {/* Separate buttons side by side: a button can't sit inside another. */}
+              <View style={styles.cardHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showInstructions }}
+                  onPress={() => setInstructionsToggled(!showInstructions)}
+                  style={styles.cardToggle}>
+                  <ThemedText type="smallBold" style={styles.cardTitle}>
+                    How to fill this in
+                  </ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {showInstructions ? 'Hide' : 'Show'}
                   </ThemedText>
-                </View>
-                {showInstructions && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {data.page.instructions}
-                  </ThemedText>
+                </Pressable>
+                {isAdmin && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit instructions"
+                    hitSlop={8}
+                    onPress={() => setRenaming({ kind: 'instructions' })}>
+                    <ThemedText type="small" style={{ color: theme.tint }}>
+                      Edit
+                    </ThemedText>
+                  </Pressable>
                 )}
-              </ThemedView>
+              </View>
+              {showInstructions && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {data.page.instructions}
+                </ThemedText>
+              )}
+            </ThemedView>
+          )}
+          {data.page.instructions === '' && isAdmin && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setRenaming({ kind: 'instructions' })}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                + Add instructions
+              </ThemedText>
             </Pressable>
           )}
           {data.options.length > 0 && (
-            <Legend options={data.options} />
+            <Legend
+              options={data.options}
+              onPress={isAdmin ? () => setEditingChoices(true) : undefined}
+            />
+          )}
+          {data.options.length === 0 && isAdmin && usesChoices && (
+            <Pressable accessibilityRole="button" onPress={() => setEditingChoices(true)}>
+              <ThemedText type="small" style={{ color: theme.tint }}>
+                + Add choices
+              </ThemedText>
+            </Pressable>
           )}
           {!data.page.auto_members && (
             <ThemedText type="small" themeColor="textSecondary">
@@ -618,7 +705,7 @@ export default function PageScreen() {
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
             {isAdmin
-              ? '\nTap a column, a section’s title or a name to edit it. Hold a title or name, then slide up or down to move it.'
+              ? '\nTap a column, a section’s title, a name or the choices to edit them. Hold a title or name, then slide up or down to move it.'
               : ''}
           </ThemedText>
           {isAdmin && (
@@ -651,15 +738,35 @@ export default function PageScreen() {
 
       {renaming && (
         <RenameSheet
-          key={renaming.kind === 'page' ? 'page' : renaming.row.id}
-          heading={renaming.kind === 'page' ? 'Page name' : `Name in ${renaming.section.title}`}
+          key={renaming.kind === 'row' ? renaming.row.id : renaming.kind}
+          heading={
+            renaming.kind === 'page'
+              ? 'Page name'
+              : renaming.kind === 'instructions'
+                ? 'How to fill this in'
+                : `Name in ${renaming.section.title}`
+          }
           note={
             renaming.kind === 'row' && renaming.row.user_id
               ? 'On Ovelo · renaming only changes how they appear on this page.'
               : undefined
           }
-          value={renaming.kind === 'page' ? data.page.title : renaming.row.label}
-          maxLength={renaming.kind === 'row' ? MAX_NAME_LENGTH : MAX_TITLE_LENGTH}
+          value={
+            renaming.kind === 'page'
+              ? data.page.title
+              : renaming.kind === 'instructions'
+                ? data.page.instructions
+                : renaming.row.label
+          }
+          maxLength={
+            renaming.kind === 'row'
+              ? MAX_NAME_LENGTH
+              : renaming.kind === 'instructions'
+                ? MAX_INSTRUCTIONS_LENGTH
+                : MAX_TITLE_LENGTH
+          }
+          multiline={renaming.kind === 'instructions'}
+          allowEmpty={renaming.kind === 'instructions'}
           onSave={handleRename}
           onClose={() => setRenaming(null)}
           removeLabel={renaming.kind === 'row' ? `Remove from ${renaming.section.title}` : undefined}
@@ -697,6 +804,15 @@ export default function PageScreen() {
               ? () => confirmDeleteSection(openSection)
               : undefined
           }
+        />
+      )}
+
+      {editingChoices && (
+        <ChoicesSheet
+          options={data.options}
+          required={usesChoices}
+          onSave={handleSaveChoices}
+          onClose={() => setEditingChoices(false)}
         />
       )}
 
@@ -755,7 +871,17 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  cardToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  cardTitle: {
+    flex: 1,
   },
   footer: {
     gap: Spacing.three,

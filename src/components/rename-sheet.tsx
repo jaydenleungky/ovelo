@@ -17,6 +17,10 @@ type RenameSheetProps = {
   maxLength: number;
   onSave: (value: string) => void;
   onClose: () => void;
+  /** Several lines of text, e.g. a page's instructions. */
+  multiline?: boolean;
+  /** Saving an empty value is allowed, e.g. to clear instructions. */
+  allowEmpty?: boolean;
   /** Shows a remove button, e.g. "Remove from Vocalists". */
   removeLabel?: string;
   onRemove?: () => void;
@@ -30,6 +34,8 @@ export function RenameSheet({
   maxLength,
   onSave,
   onClose,
+  multiline = false,
+  allowEmpty = false,
   removeLabel,
   onRemove,
 }: RenameSheetProps) {
@@ -39,7 +45,7 @@ export function RenameSheet({
   const trimmed = text.trim();
 
   function save() {
-    if (!trimmed) return;
+    if (!trimmed && !allowEmpty) return;
     if (trimmed !== value) onSave(trimmed);
     onClose();
   }
@@ -74,14 +80,16 @@ export function RenameSheet({
             value={text}
             onChangeText={setText}
             autoFocus
-            selectTextOnFocus
+            selectTextOnFocus={!multiline}
             maxLength={maxLength}
-            returnKeyType="done"
-            onSubmitEditing={save}
+            multiline={multiline}
+            returnKeyType={multiline ? 'default' : 'done'}
+            onSubmitEditing={multiline ? undefined : save}
+            style={multiline ? styles.multiline : undefined}
           />
 
           <View style={styles.actions}>
-            <Button title="Save" onPress={save} disabled={!trimmed} />
+            <Button title="Save" onPress={save} disabled={!trimmed && !allowEmpty} />
             {onRemove && removeLabel && (
               <Button title={removeLabel} variant="secondary" onPress={onRemove} />
             )}
@@ -118,5 +126,10 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: Spacing.two,
+  },
+  multiline: {
+    minHeight: 120,
+    paddingTop: Spacing.three,
+    textAlignVertical: 'top',
   },
 });

@@ -177,6 +177,75 @@ export async function renamePage(pageId: string, title: string) {
   check(await supabase.from('pages').update({ title }).eq('id', pageId));
 }
 
+export async function setInstructions(pageId: string, instructions: string) {
+  check(await supabase.from('pages').update({ instructions }).eq('id', pageId));
+}
+
+/** A choice as it should be after editing; no `id` means it's new. */
+export type OptionEdit = { id?: string; value: string; label: string; colour: string };
+
+/**
+ * Saves a page's edited choices, keeping filled-in cells in step:
+ * a changed short code (Y → P) is changed in every cell that used it, and a
+ * removed choice is cleared from the cells that used it.
+ */
+export async function saveOptions(pageId: string, original: Option[], next: OptionEdit[]) {
+  const before = new Map(original.map((o) => [o.id, o]));
+  const finalValues = new Set(next.map((o) => o.value));
+  const kept = next.filter((o) => o.id && before.has(o.id));
+  const keptIds = new Set(kept.map((o) => o.id));
+  const removed = original.filter((o) => !keptIds.has(o.id));
+  const renamed = kept.filter((o) => before.get(o.id!)!.value !== o.value);
+
+  // Choices: delete removed ones, then update the rest. Codes must stay unique
+  // on a page, so changed codes go through a placeholder first (e.g. Y ⇄ N).
+  if (removed.length > 0) {
+    check(await supabase.from('page_options').delete().in('id', removed.map((o) => o.id)));
+  }
+  for (const [i, o] of renamed.entries()) {
+    check(await supabase.from('page_options').update({ value: `~${i}` }).eq('id', o.id!));
+  }
+  const updates = kept.flatMap((o) => {
+    const old = before.get(o.id!)!;
+    const position = next.indexOf(o);
+    if (
+      old.value === o.value &&
+      old.label === o.label &&
+      old.colour === o.colour &&
+      old.position === position
+    ) {
+      return [];
+    }
+    return [
+      supabase
+        .from('page_options')
+        .update({ value: o.value, label: o.label, colour: o.colour, position })
+        .eq('id', o.id!),
+    ];
+  });
+  for (const result of await Promise.all(updates)) check(result);
+  const added = next.flatMap((o, position) =>
+    o.id && keptIds.has(o.id)
+      ? []
+      : [{ page_id: pageId, position, value: o.value, label: o.label, colour: o.colour }],
+  );
+  if (added.length > 0) check(await supabase.from('page_options').insert(added));
+
+  // Cells: clear removed codes that nothing uses now, then move renamed codes
+  // (through placeholders too, so swapping two codes works).
+  const cleared = removed.map((o) => o.value).filter((v) => !finalValues.has(v));
+  if (cleared.length > 0) {
+    check(await supabase.from('cells').delete().eq('page_id', pageId).in('value', cleared));
+  }
+  for (const [i, o] of renamed.entries()) {
+    const old = before.get(o.id!)!.value;
+    check(await supabase.from('cells').update({ value: `~${i}` }).eq('page_id', pageId).eq('value', old));
+  }
+  for (const [i, o] of renamed.entries()) {
+    check(await supabase.from('cells').update({ value: o.value }).eq('page_id', pageId).eq('value', `~${i}`));
+  }
+}
+
 export async function renameSection(sectionId: string, title: string) {
   check(await supabase.from('page_sections').update({ title }).eq('id', sectionId));
 }
