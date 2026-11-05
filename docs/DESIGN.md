@@ -90,10 +90,23 @@ Setup outside the code:
   and secret.
 - Supabase **Authentication → URL Configuration → Redirect URLs**:
   `exp://**` and `exps://**` (Expo Go, `exps` over a tunnel), `ovelo://**`
-  (app builds) and `http://localhost:8081/**`, `http://localhost:8082/**`
-  (web in development). The hosted site's address is added when it exists.
+  (app builds), `https://ovelo.expo.app/**` (the hosted site) and
+  `http://localhost:8081/**`, `http://localhost:8082/**` (web in development).
 
 New Google accounts take their display name from the Google profile.
+
+## Hosting
+
+The web app is live at **https://ovelo.expo.app**, on EAS Hosting. It's a
+single-page app (`web.output: "single"`), and EAS Hosting serves it for any
+path, so links to a group or page load directly.
+
+To publish the current code, run `npm run deploy:web`. It exports the web
+build to `dist/` (with the `EXPO_PUBLIC_` values from `.env.local`) and
+deploys it to production. The live site only changes when this is run.
+
+Supabase's **Site URL** is `https://ovelo.expo.app`, so sign-up
+confirmation emails link to the live site.
 
 ## Real time and notifications
 
