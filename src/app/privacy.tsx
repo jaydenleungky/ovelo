@@ -2,6 +2,7 @@ import { Stack, router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -77,12 +78,13 @@ export default function PrivacyScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <Stack.Screen options={{ title: 'Privacy policy' }} />
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.content}>
             <Pressable accessibilityRole="button" onPress={goBack} style={styles.back}>
-              <ThemedText type="small" style={{ color: theme.tint }}>
+              <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                 ‹ Back to Ovelo
               </ThemedText>
             </Pressable>

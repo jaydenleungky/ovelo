@@ -101,7 +101,7 @@ export function LegendEditor({ options, onChange }: LegendEditorProps) {
       ))}
 
       <Pressable accessibilityRole="button" onPress={addChoice} style={styles.addLink}>
-        <ThemedText type="small" style={{ color: theme.tint }}>
+        <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
           + Add a choice
         </ThemedText>
       </Pressable>

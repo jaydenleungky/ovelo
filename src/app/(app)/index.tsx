@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { Button } from '@/components/button';
 import { RenameSheet } from '@/components/rename-sheet';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -80,6 +81,7 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.scroll}>
@@ -143,7 +145,7 @@ export default function HomeScreen() {
                   </ThemedText>
                   <ThemedText type="smallBold">{name || 'Not set'}</ThemedText>
                 </View>
-                <ThemedText type="small" style={{ color: theme.tint }}>
+                <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                   Change
                 </ThemedText>
               </ThemedView>
@@ -156,7 +158,7 @@ export default function HomeScreen() {
               accessibilityRole="button"
               onPress={confirmDeleteAccount}
               style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}>
-              <ThemedText type="small" style={{ color: theme.danger }}>
+              <ThemedText type="small" style={{ color: theme.danger, fontWeight: 600 }}>
                 Delete account
               </ThemedText>
             </Pressable>

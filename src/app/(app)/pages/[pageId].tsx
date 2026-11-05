@@ -19,6 +19,7 @@ import { ColumnsSheet } from '@/components/columns-sheet';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
 import { RenameSheet } from '@/components/rename-sheet';
 import { SectionSheet } from '@/components/section-sheet';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -576,6 +577,7 @@ export default function PageScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <Stack.Screen
         options={{
           title: data.page.title,
@@ -623,7 +625,7 @@ export default function PageScreen() {
                     accessibilityLabel="Edit instructions"
                     hitSlop={8}
                     onPress={() => setRenaming({ kind: 'instructions' })}>
-                    <ThemedText type="small" style={{ color: theme.tint }}>
+                    <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                       Edit
                     </ThemedText>
                   </Pressable>
@@ -640,7 +642,7 @@ export default function PageScreen() {
             <Pressable
               accessibilityRole="button"
               onPress={() => setRenaming({ kind: 'instructions' })}>
-              <ThemedText type="small" style={{ color: theme.tint }}>
+              <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                 + Add instructions
               </ThemedText>
             </Pressable>
@@ -653,7 +655,7 @@ export default function PageScreen() {
           )}
           {data.options.length === 0 && isAdmin && usesChoices && (
             <Pressable accessibilityRole="button" onPress={() => setEditingChoices(true)}>
-              <ThemedText type="small" style={{ color: theme.tint }}>
+              <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                 + Add choices
               </ThemedText>
             </Pressable>
@@ -732,7 +734,7 @@ export default function PageScreen() {
               />
             </ThemedView>
           )}
-          {isAdmin && <Button title="Delete page" variant="secondary" onPress={confirmDelete} />}
+          {isAdmin && <Button title="Delete page" variant="danger" onPress={confirmDelete} />}
         </View>
       </ScrollView>
 

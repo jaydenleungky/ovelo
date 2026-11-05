@@ -9,6 +9,7 @@ import { ColumnPicker, MonthDaysPicker } from '@/components/page-builder/column-
 import { LegendEditor } from '@/components/page-builder/legend-editor';
 import { NEW_SECTION, SectionListEditor } from '@/components/page-builder/section-list-editor';
 import { TextField } from '@/components/text-field';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -134,6 +135,7 @@ export default function NewPageScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.group}>
           <ThemedText type="smallBold">Start from</ThemedText>
@@ -217,7 +219,7 @@ export default function NewPageScreen() {
                 items={rosterSections}
                 onChange={setRosterSections}
                 addLabel="Add a section"
-                placeholder="e.g. Violinists"
+                placeholder="e.g. Helpers"
               />
             </View>
           </>

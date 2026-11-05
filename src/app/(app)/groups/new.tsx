@@ -43,7 +43,7 @@ export default function NewGroupScreen() {
           label="Group name"
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Leung Family or Youth Worship"
+          placeholder="e.g. Family"
           autoFocus
           maxLength={60}
           returnKeyType="done"

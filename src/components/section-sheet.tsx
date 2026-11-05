@@ -147,7 +147,7 @@ export function SectionSheet({
                 accessibilityRole="button"
                 onPress={onDelete}
                 style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}>
-                <ThemedText type="small" style={{ color: theme.danger }}>
+                <ThemedText type="small" style={{ color: theme.danger, fontWeight: 600 }}>
                   Delete section
                 </ThemedText>
               </Pressable>

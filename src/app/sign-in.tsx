@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
+import { ScreenFade } from '@/components/screen-fade';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -86,6 +87,7 @@ export default function SignInScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <ScreenFade />
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           style={styles.container}
@@ -137,7 +139,7 @@ export default function SignInScreen() {
                     label="Your name"
                     value={displayName}
                     onChangeText={setDisplayName}
-                    placeholder="e.g. Jayden"
+                    placeholder="e.g. Alex"
                     autoComplete="name"
                     textContentType="name"
                     returnKeyType="next"
@@ -189,7 +191,7 @@ export default function SignInScreen() {
                     accessibilityRole="button"
                     onPress={() => router.push('/forgot-password')}
                     style={styles.link}>
-                    <ThemedText type="small" style={{ color: theme.tint }}>
+                    <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
                       Forgot password?
                     </ThemedText>
                   </Pressable>
