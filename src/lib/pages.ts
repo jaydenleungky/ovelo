@@ -218,6 +218,43 @@ export async function reorderSections(sectionIds: string[]) {
   for (const result of results) check(result);
 }
 
+/** A column as it should be after editing; no `id` means it's new. */
+export type ColumnEdit = { id?: string; position: number; label: string; date: string | null };
+
+/**
+ * Saves a page's edited columns. Columns missing from `next` are deleted
+ * along with everything filled in under them; the rest are added or updated.
+ */
+export async function saveColumns(pageId: string, original: Column[], next: ColumnEdit[]) {
+  const kept = new Set(next.flatMap((c) => (c.id ? [c.id] : [])));
+  const removed = original.filter((c) => !kept.has(c.id)).map((c) => c.id);
+  if (removed.length > 0) {
+    check(await supabase.from('page_columns').delete().in('id', removed));
+  }
+
+  const before = new Map(original.map((c) => [c.id, c]));
+  const updates = next.flatMap((c) => {
+    const old = c.id ? before.get(c.id) : undefined;
+    if (!c.id || !old || (old.label === c.label && old.position === c.position)) return [];
+    return [
+      supabase
+        .from('page_columns')
+        .update({ label: c.label, position: c.position })
+        .eq('id', c.id),
+    ];
+  });
+  for (const result of await Promise.all(updates)) check(result);
+
+  const added = next.filter((c) => !c.id);
+  if (added.length > 0) {
+    check(
+      await supabase
+        .from('page_columns')
+        .insert(added.map(({ position, label, date }) => ({ page_id: pageId, position, label, date }))),
+    );
+  }
+}
+
 export async function renameRow(rowId: string, label: string) {
   check(await supabase.from('page_rows').update({ label }).eq('id', rowId));
 }

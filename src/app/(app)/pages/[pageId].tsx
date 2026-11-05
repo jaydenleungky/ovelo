@@ -14,6 +14,7 @@ import {
 import { AddSectionSheet } from '@/components/add-section-sheet';
 import { Button } from '@/components/button';
 import { CellEditor, type CellTarget } from '@/components/cell-editor';
+import { ColumnsSheet } from '@/components/columns-sheet';
 import { GridBody, GridHeader, Legend, gridWidth, useGridScrollSync } from '@/components/page-grid';
 import { RenameSheet } from '@/components/rename-sheet';
 import { SectionSheet } from '@/components/section-sheet';
@@ -36,6 +37,8 @@ import {
   renameSection,
   reorderRows,
   reorderSections,
+  saveColumns,
+  type ColumnEdit,
   setCell,
   setPageEveryone,
   setSectionMember,
@@ -85,6 +88,9 @@ function withChange(data: PageData, change: PageChange): PageData {
       const sections = [...others, change.section].sort((a, b) => a.position - b.position);
       return { ...data, sections };
     }
+    case 'column':
+    case 'column-removed':
+      return withColumnChange(data, change);
     case 'section-removed': {
       // Deletes arrive for every page, so skip sections that aren't on this one.
       if (!data.sections.some((s) => s.id === change.sectionId)) return data;
@@ -97,6 +103,22 @@ function withChange(data: PageData, change: PageChange): PageData {
       };
     }
   }
+}
+
+/** The page with one column added, updated or removed. */
+function withColumnChange(data: PageData, change: Extract<PageChange, { kind: 'column' | 'column-removed' }>) {
+  if (change.kind === 'column') {
+    const others = data.columns.filter((c) => c.id !== change.column.id);
+    const columns = [...others, change.column].sort((a, b) => a.position - b.position);
+    return { ...data, columns };
+  }
+  // Deletes arrive for every page, so skip columns that aren't on this one.
+  if (!data.columns.some((c) => c.id === change.columnId)) return data;
+  return {
+    ...data,
+    columns: data.columns.filter((c) => c.id !== change.columnId),
+    cells: data.cells.filter((c) => c.column_id !== change.columnId),
+  };
 }
 
 /** The page with its sections put in a new order. */
@@ -137,6 +159,7 @@ export default function PageScreen() {
   // The section whose sheet is open (by id, so live renames show in it).
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [addingSection, setAddingSection] = useState(false);
+  const [editingColumns, setEditingColumns] = useState(false);
   // "sectionId:userId" for section changes still saving.
   const [savingMembers, setSavingMembers] = useState<Set<string>>(new Set());
   // Off while a name is being dragged, so the page stays still.
@@ -348,6 +371,34 @@ export default function PageScreen() {
     }
   }
 
+  async function handleSaveColumns(next: ColumnEdit[]) {
+    if (!data) return;
+    const kept = new Set(next.flatMap((c) => (c.id ? [c.id] : [])));
+    const removed = data.columns.filter((c) => !kept.has(c.id));
+    const withEntries = removed.filter((c) => data.cells.some((cell) => cell.column_id === c.id));
+    if (withEntries.length > 0) {
+      const names = withEntries.map((c) => c.label).join(', ');
+      const confirmed = await confirmAction({
+        title: withEntries.length === 1 ? `Remove ${names}?` : `Remove ${withEntries.length} columns?`,
+        message: `${withEntries.length === 1 ? '' : `${names}. `}Everything filled in under ${
+          withEntries.length === 1 ? 'it' : 'them'
+        } will be lost.`,
+        confirmText: 'Remove',
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    setEditingColumns(false);
+    try {
+      await saveColumns(pageId, data.columns, next);
+      // New columns get their ids from the database; they also arrive live.
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage("Couldn't save the columns", e instanceof Error ? e.message : undefined);
+      getPageData(pageId).then(setData).catch(() => {});
+    }
+  }
+
   function handleReorderSections(sectionIds: string[]) {
     saveLayout(
       (d) => withSectionOrder(d, sectionIds),
@@ -534,7 +585,11 @@ export default function PageScreen() {
         </View>
 
         {/* 1: sticky header */}
-        <GridHeader data={data} headerRef={headerRef} />
+        <GridHeader
+          data={data}
+          headerRef={headerRef}
+          onColumnsPress={isAdmin ? () => setEditingColumns(true) : undefined}
+        />
 
         {/* 2: grid */}
         <GridBody
@@ -563,7 +618,7 @@ export default function PageScreen() {
               ? 'Tap a cell to change it, or hold it to see every choice.'
               : 'Tap a cell to fill it in.'}
             {isAdmin
-              ? '\nTap a section’s title or a name to edit it. Hold either one, then slide up or down to move it.'
+              ? '\nTap a column, a section’s title or a name to edit it. Hold a title or name, then slide up or down to move it.'
               : ''}
           </ThemedText>
           {isAdmin && (
@@ -642,6 +697,15 @@ export default function PageScreen() {
               ? () => confirmDeleteSection(openSection)
               : undefined
           }
+        />
+      )}
+
+      {editingColumns && (
+        <ColumnsSheet
+          columnMode={data.page.column_mode}
+          columns={data.columns}
+          onSave={handleSaveColumns}
+          onClose={() => setEditingColumns(false)}
         />
       )}
 

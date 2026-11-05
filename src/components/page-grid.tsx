@@ -68,9 +68,11 @@ function isToday(column: Column, columnMode: PageData['page']['column_mode'], to
 type HeaderProps = {
   data: PageData;
   headerRef: React.RefObject<ScrollViewInstance | null>;
+  /** Admins: tap any column header to edit the columns. */
+  onColumnsPress?: () => void;
 };
 
-export function GridHeader({ data, headerRef }: HeaderProps) {
+export function GridHeader({ data, headerRef, onColumnsPress }: HeaderProps) {
   const theme = useTheme();
   const today = new Date();
 
@@ -89,13 +91,19 @@ export function GridHeader({ data, headerRef }: HeaderProps) {
             ? formatColumnDate(column.date)
             : { weekday: column.label, day: '' };
           return (
-            <View
+            <Pressable
               key={column.id}
-              accessibilityLabel={`${column.label}${highlight ? ', today' : ''}`}
-              style={[
+              disabled={!onColumnsPress}
+              accessibilityRole={onColumnsPress ? 'button' : 'header'}
+              accessibilityLabel={`${column.label}${highlight ? ', today' : ''}${
+                onColumnsPress ? '. Tap to edit columns.' : ''
+              }`}
+              onPress={onColumnsPress}
+              style={({ pressed }) => [
                 styles.headerCell,
                 { width: columnWidth(data.page.column_mode) },
                 highlight && { backgroundColor: theme.tint },
+                pressed && styles.pressed,
               ]}>
               <ThemedText
                 type="smallBold"
@@ -110,7 +118,7 @@ export function GridHeader({ data, headerRef }: HeaderProps) {
                   {day}
                 </ThemedText>
               )}
-            </View>
+            </Pressable>
           );
         })}
       </ScrollView>

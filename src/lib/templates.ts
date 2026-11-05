@@ -119,6 +119,12 @@ export function formatColumnDate(value: string) {
   };
 }
 
+/** A date column's label, e.g. '6 Nov (Fri)'. */
+export function dateColumnLabel(value: string) {
+  const { weekday, day } = formatColumnDate(value);
+  return `${day} (${weekday})`;
+}
+
 export type MonthChoice = { year: number; month: number; label: string };
 
 /** This month and the next `count - 1` months: a full year by default. */
@@ -149,8 +155,7 @@ export function buildColumns(choice: ColumnChoice): { columnMode: ColumnMode; co
         columnMode: 'dates',
         columns: datesInMonth(choice.year, choice.month, choice.weekdays).map((date) => {
           const value = toDateString(date);
-          const { weekday, day } = formatColumnDate(value);
-          return { label: `${day} (${weekday})`, date: value };
+          return { label: dateColumnLabel(value), date: value };
         }),
       };
     case 'custom':
