@@ -38,6 +38,7 @@ import { confirmAction, showMessage } from '@/lib/dialogs';
 import { getMyRole, listMembers, type Member, type Role } from '@/lib/groups';
 import { subscribeToPage, type PageChange } from '@/lib/page-live';
 import {
+  addNamedRow,
   addSection,
   deletePage,
   deleteSection,
@@ -399,6 +400,21 @@ export default function PageScreen() {
       }),
       () => renameSection(sectionId, title),
     );
+  }
+
+  /** Adds a row with just a name to a section, e.g. someone not on Ovelo. */
+  async function handleAddName(section: Section, name: string) {
+    if (!data) return;
+    const position = data.rows
+      .filter((r) => r.section_id === section.id)
+      .reduce((max, r) => Math.max(max, r.position + 1), 0);
+    try {
+      await addNamedRow(pageId, section.id, position, name);
+      // The new row's id comes from the database; it also arrives live.
+      setData(await getPageData(pageId));
+    } catch (e) {
+      showMessage(`Couldn't add ${name}`, e instanceof Error ? e.message : undefined);
+    }
   }
 
   async function handleAddSection(title: string, cellType: Section['cell_type']) {
@@ -848,6 +864,18 @@ export default function PageScreen() {
           onDelete={
             isAdmin && data.sections.length > 1
               ? () => confirmDeleteSection(openSection)
+              : undefined
+          }
+          namedRows={data.rows
+            .filter((r) => r.section_id === openSection.id && r.user_id === null)
+            .map((r) => ({ id: r.id, label: r.label }))}
+          onAddName={isAdmin ? (name) => handleAddName(openSection, name) : undefined}
+          onRemoveNamed={
+            isAdmin
+              ? (rowId) => {
+                  const row = data.rows.find((r) => r.id === rowId);
+                  if (row) confirmRemoveRow(row, openSection);
+                }
               : undefined
           }
         />
