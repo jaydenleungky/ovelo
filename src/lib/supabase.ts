@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
 import { authStorage } from '@/lib/auth-storage';
+// Before the client is made: it checks for Web Crypto when signing in.
+import '@/lib/crypto-polyfill';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
@@ -12,7 +14,11 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // Google sign-in returns with a one-time code to swap for a session. On
+    // the web Supabase reads it from the page address after the redirect;
+    // in the app we swap it ourselves (see signInWithGoogle).
+    flowType: 'pkce',
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });
 

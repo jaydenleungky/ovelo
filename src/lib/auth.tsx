@@ -1,5 +1,8 @@
 import type { Session } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { createContext, use, useEffect, useState, type PropsWithChildren } from 'react';
+import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
 
@@ -68,6 +71,43 @@ export function useAuth() {
 export async function signIn(email: string, password: string) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+}
+
+/**
+ * Signs in (or signs up) with a Google account.
+ *
+ * On the web the page goes to Google and comes back signed in. In the app,
+ * Google opens in a browser sheet that returns to Ovelo with a code, which
+ * is swapped for a session. Returns false if the person closed the sheet.
+ */
+export async function signInWithGoogle(): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) throw error;
+    return true;
+  }
+
+  // exp://… (or exps://… over a tunnel) in Expo Go, ovelo://… in the real app.
+  // Each scheme must be in Supabase's Redirect URLs list.
+  const redirectTo = Linking.createURL('auth/callback');
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo, skipBrowserRedirect: true },
+  });
+  if (error) throw error;
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type !== 'success') return false;
+
+  const params = Linking.parse(result.url).queryParams ?? {};
+  if (typeof params.error_description === 'string') throw new Error(params.error_description);
+  if (typeof params.code !== 'string') throw new Error('Google sign-in didn’t finish. Please try again.');
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code);
+  if (exchangeError) throw exchangeError;
+  return true;
 }
 
 /** Creates an account. Returns true if the user must confirm their email first. */
