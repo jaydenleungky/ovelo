@@ -55,7 +55,10 @@ import {
   setInstructions,
   type ColumnEdit,
   type OptionEdit,
+  NO_WEEK,
+  cellWeek,
   setCell,
+  setWeeklyDates,
   setPageEveryone,
   setSectionMember,
   type Column,
@@ -63,6 +66,7 @@ import {
   type Row,
   type Section,
 } from '@/lib/pages';
+import { addDays, formatWeekRange, weekStartOf } from '@/lib/templates';
 
 const COLUMN_WORD = { weekdays: 'day', dates: 'date', custom: 'column' } as const;
 const SHORT_SCREEN_HEIGHT = 500;
@@ -183,6 +187,9 @@ export default function PageScreen() {
   const wide = useWideScreen();
 
   const [data, setData] = useState<PageData | null>(null);
+  // Pages with weekly dates: the week being viewed (its Monday, 'YYYY-MM-DD').
+  const thisWeek = weekStartOf(new Date());
+  const [viewWeek, setViewWeek] = useState(thisWeek);
   const [role, setRole] = useState<Role | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -218,7 +225,7 @@ export default function PageScreen() {
       let active = true;
 
       function load() {
-        getPageData(pageId)
+        getPageData(pageId, viewWeek)
           .then(async (result) => {
             const [myRole, groupMembers] = await Promise.all([
               getMyRole(result.page.group_id, userId!),
@@ -257,7 +264,10 @@ export default function PageScreen() {
         if (change.kind === 'cell' && change.value.startsWith('~')) return;
         if (change.kind === 'option' && change.option.value.startsWith('~')) return;
         if (change.kind === 'cell') {
-          const key = `${change.rowId}:${change.columnId}`;
+          // Answers for other weeks don't belong on screen. (Pages without
+          // weekly dates only have NO_WEEK answers, and pages with them none.)
+          if (change.week !== viewWeek && change.week !== NO_WEEK) return;
+          const key = `${change.week}:${change.rowId}:${change.columnId}`;
           if (isOwnEcho(key, change.value)) return;
         }
         setData((d) => (d ? withChange(d, change) : d));
@@ -272,7 +282,7 @@ export default function PageScreen() {
         active = false;
         unsubscribe();
       };
-    }, [pageId, userId]),
+    }, [pageId, userId, viewWeek]),
   );
 
   const isAdmin = role === 'admin';
@@ -311,13 +321,14 @@ export default function PageScreen() {
     if (previous === value) return;
     showCellLocally(rowId, columnId, value);
 
-    const key = `${rowId}:${columnId}`;
+    const week = cellWeek(data.page, viewWeek);
+    const key = `${week}:${rowId}:${columnId}`;
     const waiting = unconfirmed.current.get(key) ?? [];
     unconfirmed.current.set(key, [...waiting, value]);
 
     const before = pendingSaves.current.get(key) ?? Promise.resolve();
     const save = before
-      .then(() => setCell(data.page.id, rowId, columnId, value))
+      .then(() => setCell(data.page.id, rowId, columnId, value, week))
       .catch((e: Error) => {
         // No echo is coming for a save that failed.
         const list = unconfirmed.current.get(key);
@@ -364,7 +375,7 @@ export default function PageScreen() {
       await save();
     } catch (e) {
       showMessage("Couldn't save that change", friendlyError(e));
-      getPageData(pageId)
+      getPageData(pageId, viewWeek)
         .then(setData)
         .catch(() => {});
     }
@@ -427,7 +438,7 @@ export default function PageScreen() {
     try {
       await addNamedRow(pageId, section.id, position, name);
       // The new row's id comes from the database; it also arrives live.
-      setData(await getPageData(pageId));
+      setData(await getPageData(pageId, viewWeek));
     } catch (e) {
       showMessage(`Couldn't add ${name}`, friendlyError(e));
     }
@@ -439,7 +450,7 @@ export default function PageScreen() {
     try {
       await addSection(pageId, position, title, cellType);
       // The section (and, on "everyone" pages, its people) also arrive live.
-      setData(await getPageData(pageId));
+      setData(await getPageData(pageId, viewWeek));
     } catch (e) {
       showMessage("Couldn't add the section", friendlyError(e));
     }
@@ -467,10 +478,10 @@ export default function PageScreen() {
     try {
       await saveColumns(pageId, data.columns, next);
       // New columns get their ids from the database; they also arrive live.
-      setData(await getPageData(pageId));
+      setData(await getPageData(pageId, viewWeek));
     } catch (e) {
       showMessage("Couldn't save the columns", friendlyError(e));
-      getPageData(pageId)
+      getPageData(pageId, viewWeek)
         .then(setData)
         .catch(() => {});
     }
@@ -496,10 +507,10 @@ export default function PageScreen() {
     setEditingChoices(false);
     try {
       await saveOptions(pageId, data.options, next);
-      setData(await getPageData(pageId));
+      setData(await getPageData(pageId, viewWeek));
     } catch (e) {
       showMessage("Couldn't save the choices", friendlyError(e));
-      getPageData(pageId)
+      getPageData(pageId, viewWeek)
         .then(setData)
         .catch(() => {});
     }
@@ -551,7 +562,7 @@ export default function PageScreen() {
     try {
       await setSectionMember(section.id, member.user_id, inSection);
       // Don't wait on the live update to show the change.
-      const fresh = await getPageData(pageId);
+      const fresh = await getPageData(pageId, viewWeek);
       setData(fresh);
     } catch (e) {
       showMessage("Couldn't save that change", friendlyError(e));
@@ -561,6 +572,33 @@ export default function PageScreen() {
         next.delete(key);
         return next;
       });
+    }
+  }
+
+  /** Moves to another week: -7 back, 7 forward, or straight to a week. */
+  function showWeek(week: string) {
+    if (week === viewWeek) return;
+    // Clear the old week's answers while the new week loads.
+    setData((d) => d && { ...d, cells: [] });
+    setViewWeek(week);
+  }
+
+  async function toggleWeeklyDates(turnOn: boolean) {
+    if (!data) return;
+    const confirmed = await confirmAction({
+      title: turnOn ? 'Show dates for each week?' : 'Stop showing dates?',
+      message: turnOn
+        ? 'What’s filled in now becomes this week’s answers. From next Monday, each week starts empty, and past weeks are kept to look back on.'
+        : 'This week’s answers stay as the page’s plan. Other weeks are kept, in case you turn dates on again.',
+      confirmText: turnOn ? 'Show dates' : 'Stop',
+    });
+    if (!confirmed) return;
+    try {
+      await setWeeklyDates(data.page.id, turnOn, thisWeek);
+      setViewWeek(thisWeek);
+      setData(await getPageData(pageId, thisWeek));
+    } catch (e) {
+      showMessage("Couldn't change that", friendlyError(e));
     }
   }
 
@@ -580,7 +618,7 @@ export default function PageScreen() {
     );
     // New rows come in as live updates; reload in case they're slow.
     if (everyone)
-      getPageData(pageId)
+      getPageData(pageId, viewWeek)
         .then(setData)
         .catch(() => {});
   }
@@ -641,6 +679,7 @@ export default function PageScreen() {
   const showInstructions = instructionsToggled ?? screen.height >= SHORT_SCREEN_HEIGHT;
   // Columns widen to fill spare space, e.g. on a laptop.
   const columnWidth = fittedColumnWidth(data, screen.width);
+  const weekly = data.page.weekly_dates && data.page.column_mode === 'weekdays';
   const overflows = gridWidth(data, columnWidth) > screen.width;
   const showRotateTip = overflows && Platform.OS !== 'web' && screen.height > screen.width;
 
@@ -672,6 +711,54 @@ export default function PageScreen() {
         contentContainerStyle={styles.scroll}>
         {/* 0: intro (scrolls away) */}
         <View style={styles.intro}>
+          {weekly && (
+            <View style={styles.weekGroup}>
+              <ThemedView type="backgroundElement" style={styles.weekBar}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous week"
+                  hitSlop={8}
+                  onPress={() => showWeek(addDays(viewWeek, -7))}
+                  style={({ pressed }) => [styles.weekArrow, pressed && styles.pressed]}>
+                  <ThemedText type="subtitle" style={{ color: theme.link }}>
+                    ‹
+                  </ThemedText>
+                </Pressable>
+                <View style={styles.weekText} accessibilityLiveRegion="polite">
+                  <ThemedText type="smallBold" accessibilityRole="header">
+                    Week of {formatWeekRange(viewWeek)}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {viewWeek === thisWeek
+                      ? 'This week'
+                      : viewWeek < thisWeek
+                        ? 'A past week'
+                        : 'A week ahead'}
+                  </ThemedText>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Next week"
+                  hitSlop={8}
+                  onPress={() => showWeek(addDays(viewWeek, 7))}
+                  style={({ pressed }) => [styles.weekArrow, pressed && styles.pressed]}>
+                  <ThemedText type="subtitle" style={{ color: theme.link }}>
+                    ›
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+              {viewWeek !== thisWeek && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showWeek(thisWeek)}
+                  style={styles.backToWeek}>
+                  <ThemedText type="small" style={{ color: theme.link, fontWeight: 600 }}>
+                    Back to this week
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
+          )}
           <View style={[styles.introBlocks, wide && styles.introBlocksWide]}>
             <View style={[styles.introBlock, wide && styles.introBlockWide]}>
               {data.page.instructions !== '' && (
@@ -751,6 +838,7 @@ export default function PageScreen() {
         {/* 1: sticky header */}
         <GridHeader
           width={columnWidth}
+          weekStart={weekly ? viewWeek : undefined}
           data={data}
           headerRef={headerRef}
           onColumnsPress={isAdmin ? () => setEditingColumns(true) : undefined}
@@ -759,6 +847,7 @@ export default function PageScreen() {
         {/* 2: grid */}
         <GridBody
           width={columnWidth}
+          weekStart={weekly ? viewWeek : undefined}
           data={data}
           currentUserId={userId}
           canEditLayout={isAdmin}
@@ -813,6 +902,25 @@ export default function PageScreen() {
                   accessibilityLabel="Everyone in every section"
                 />
               </ThemedView>
+              {data.page.column_mode === 'weekdays' && (
+                <ThemedView
+                  type="backgroundElement"
+                  style={[styles.switchRow, wide && styles.controlItemWide]}>
+                  <View style={styles.switchText}>
+                    <ThemedText type="smallBold">Dates for each week</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {data.page.weekly_dates
+                        ? 'Each week starts empty, and past weeks are kept.'
+                        : 'The same plan every week, without dates.'}
+                    </ThemedText>
+                  </View>
+                  <Switch
+                    value={data.page.weekly_dates}
+                    onValueChange={toggleWeeklyDates}
+                    accessibilityLabel="Dates for each week"
+                  />
+                </ThemedView>
+              )}
               <View style={wide && styles.controlItem}>
                 <Button title="Delete page" variant="danger" onPress={confirmDelete} />
               </View>
@@ -981,6 +1089,33 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
+  },
+  weekGroup: {
+    gap: Spacing.two,
+  },
+  weekBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: Spacing.three,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  weekArrow: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekText: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  pressed: {
+    opacity: 0.6,
+  },
+  backToWeek: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.one,
   },
   introBlocks: {
     gap: Spacing.three,

@@ -27,7 +27,9 @@ The schema lives in `supabase/migrations/`.
 - **pages**: `id`, `group_id`, `title`, `instructions`, `column_mode`
   (`weekdays` | `dates` | `custom`), `template` (`meal_plan` | `roster` |
   `blank`, where `blank` is a page designed from scratch in the page builder),
-  `auto_members` (everyone in the group is in every section)
+  `auto_members` (everyone in the group is in every section), `weekly_dates`
+  (Mon–Sun pages: show each week's dates, with fresh answers every week and
+  past weeks kept; switched with `set_weekly_dates()`)
 - **page_columns**: `id`, `page_id`, `position`, `label`, `date` (nullable)
 - **page_options**: `id`, `page_id`, `position`, `value` (e.g. `Y`), `label`, `colour`
 - **page_sections**: `id`, `page_id`, `position`, `title`, `cell_type`
@@ -35,8 +37,10 @@ The schema lives in `supabase/migrations/`.
   `auto_members` (holds people, rather than fixed rows like a shared "Car" row)
 - **page_rows**: `id`, `page_id`, `section_id`, `position`, `label`,
   `user_id` (nullable, links a row to a member)
-- **cells**: `page_id`, `row_id`, `column_id`, `value`, `updated_by`,
-  `updated_at` (primary key `row_id, column_id`)
+- **cells**: `page_id`, `row_id`, `column_id`, `week`, `value`, `updated_by`,
+  `updated_at` (primary key `row_id, column_id, week`). `week` is the Monday
+  of the week on pages with weekly dates, and `1970-01-01` ("no particular
+  week") everywhere else.
 
 Child tables carry `page_id`, with composite foreign keys so a row, column and
 cell can never point at different pages.

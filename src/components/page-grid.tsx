@@ -22,7 +22,13 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Column, Option, PageData, Row, Section } from '@/lib/pages';
-import { ON_CHOICE_COLOUR, formatColumnDate, toDateString, weekdayIndex } from '@/lib/templates';
+import {
+  ON_CHOICE_COLOUR,
+  addDays,
+  formatColumnDate,
+  toDateString,
+  weekdayIndex,
+} from '@/lib/templates';
 
 const NAME_WIDTH = 136;
 const COLUMN_WIDTH = 64;
@@ -83,7 +89,21 @@ export function useGridScrollSync() {
   return { headerRef, onBodyScroll };
 }
 
-function isToday(column: Column, columnMode: PageData['page']['column_mode'], today: Date) {
+/** A Mon–Sun column's real date in the week starting `weekStart` (a Monday). */
+function weekdayDate(column: Column, weekStart: string) {
+  return addDays(weekStart, column.position);
+}
+
+function isToday(
+  column: Column,
+  columnMode: PageData['page']['column_mode'],
+  today: Date,
+  weekStart?: string,
+) {
+  // With weekly dates, only the week being viewed can contain today.
+  if (columnMode === 'weekdays' && weekStart) {
+    return weekdayDate(column, weekStart) === toDateString(today);
+  }
   if (columnMode === 'weekdays') return column.position === weekdayIndex(today);
   if (columnMode === 'dates') return column.date === toDateString(today);
   return false;
@@ -94,11 +114,13 @@ type HeaderProps = {
   headerRef: React.RefObject<ScrollViewInstance | null>;
   /** Admins: tap any column header to edit the columns. */
   onColumnsPress?: () => void;
+  /** Pages with weekly dates: the Monday of the week shown, to date each day. */
+  weekStart?: string;
   /** Column width, e.g. from fittedColumnWidth. */
   width?: number;
 };
 
-export function GridHeader({ data, headerRef, onColumnsPress, width }: HeaderProps) {
+export function GridHeader({ data, headerRef, onColumnsPress, weekStart, width }: HeaderProps) {
   const colWidth = width ?? columnWidth(data.page.column_mode);
   const theme = useTheme();
   const today = new Date();
@@ -113,10 +135,12 @@ export function GridHeader({ data, headerRef, onColumnsPress, width }: HeaderPro
         scrollEnabled={false}
         showsHorizontalScrollIndicator={false}>
         {data.columns.map((column) => {
-          const highlight = isToday(column, data.page.column_mode, today);
+          const highlight = isToday(column, data.page.column_mode, today, weekStart);
           const { weekday, day } = column.date
             ? formatColumnDate(column.date)
-            : { weekday: column.label, day: '' };
+            : weekStart && data.page.column_mode === 'weekdays'
+              ? { weekday: column.label, day: formatColumnDate(weekdayDate(column, weekStart)).day }
+              : { weekday: column.label, day: '' };
           return (
             <Pressable
               key={column.id}
@@ -347,6 +371,8 @@ type BodyProps = {
   onDragChange: (active: boolean) => void;
   onCellPress: (row: Row, column: Column, section: Section) => void;
   onCellLongPress: (row: Row, column: Column, section: Section) => void;
+  /** Pages with weekly dates: the Monday of the week shown. */
+  weekStart?: string;
   /** Column width, e.g. from fittedColumnWidth. */
   width?: number;
 };
@@ -364,6 +390,7 @@ export function GridBody({
   onCellPress,
   onCellLongPress,
   width: widthProp,
+  weekStart,
 }: BodyProps) {
   const theme = useTheme();
   const today = new Date();
@@ -395,7 +422,9 @@ export function GridBody({
   for (const row of data.rows) {
     rowsBySection.set(row.section_id, [...(rowsBySection.get(row.section_id) ?? []), row]);
   }
-  const todayColumnId = data.columns.find((c) => isToday(c, data.page.column_mode, today))?.id;
+  const todayColumnId = data.columns.find((c) =>
+    isToday(c, data.page.column_mode, today, weekStart),
+  )?.id;
   const width = widthProp ?? columnWidth(data.page.column_mode);
   const line = { borderColor: theme.border };
 

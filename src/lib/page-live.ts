@@ -4,7 +4,7 @@ import type { Cell, Column, Option, Page, Row, Section } from '@/lib/pages';
 import { supabase } from '@/lib/supabase';
 
 export type PageChange =
-  | { kind: 'cell'; rowId: string; columnId: string; value: string }
+  | { kind: 'cell'; rowId: string; columnId: string; week: string; value: string }
   | { kind: 'row'; row: Row }
   | { kind: 'row-removed'; rowId: string }
   | { kind: 'page'; page: Pick<Page, 'title' | 'instructions' | 'auto_members'> }
@@ -16,7 +16,7 @@ export type PageChange =
   | { kind: 'option'; option: Option }
   | { kind: 'option-removed'; optionId: string };
 
-type CellRecord = Cell & { page_id: string };
+type CellRecord = Cell & { page_id: string; week: string };
 type RowRecord = Row & { page_id: string };
 type PageRecord = Page;
 type SectionRecord = Section & { page_id: string };
@@ -52,18 +52,14 @@ export function subscribeToPage(
     if (payload.eventType === 'DELETE') {
       // Deletes only carry the key and can't be filtered by page, so they may
       // belong to another page. The caller ignores rows it doesn't have.
-      const { row_id, column_id } = payload.old;
-      if (row_id && column_id)
-        onChange({
-          kind: 'cell',
-          rowId: row_id,
-          columnId: column_id,
-          value: '',
-        });
+      const { row_id, column_id, week } = payload.old;
+      if (row_id && column_id && week) {
+        onChange({ kind: 'cell', rowId: row_id, columnId: column_id, week, value: '' });
+      }
       return;
     }
-    const { row_id, column_id, value } = payload.new;
-    onChange({ kind: 'cell', rowId: row_id, columnId: column_id, value });
+    const { row_id, column_id, week, value } = payload.new;
+    onChange({ kind: 'cell', rowId: row_id, columnId: column_id, week, value });
   };
 
   const rowChanged = (payload: RealtimePostgresChangesPayload<RowRecord>) => {

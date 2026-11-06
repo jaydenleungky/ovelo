@@ -14,6 +14,8 @@ export type Page = PageSummary & {
   instructions: string;
   /** Everyone in the group is in every section. */
   auto_members: boolean;
+  /** Mon–Sun page showing each week's dates, with fresh answers every week. */
+  weekly_dates: boolean;
 };
 export type Column = { id: string; position: number; label: string; date: string | null };
 export type Option = { id: string; position: number; value: string; label: string; colour: string };
@@ -61,17 +63,24 @@ export async function listPages(groupId: string): Promise<PageSummary[]> {
 }
 
 /** Everything needed to draw one page's grid. */
-export async function getPageData(pageId: string): Promise<PageData> {
+/** Cells on pages without weekly dates belong to this "no particular week". */
+export const NO_WEEK = '1970-01-01';
+
+/**
+ * Everything needed to draw one page's grid. On pages with weekly dates,
+ * only the answers for `week` (a Monday, 'YYYY-MM-DD') are loaded.
+ */
+export async function getPageData(pageId: string, week: string = NO_WEEK): Promise<PageData> {
   const byPage = <T>(table: string, columns: string, orderBy?: string) => {
     const query = supabase.from(table).select(columns).eq('page_id', pageId);
     return (orderBy ? query.order(orderBy) : query).overrideTypes<T[], { merge: false }>();
   };
 
-  const [page, columns, options, sections, rows, cells] = await Promise.all([
+  const [page, columns, options, sections, rows] = await Promise.all([
     supabase
       .from('pages')
       .select(
-        'id, group_id, title, instructions, template, column_mode, auto_members, created_at',
+        'id, group_id, title, instructions, template, column_mode, auto_members, weekly_dates, created_at',
       )
       .eq('id', pageId)
       .single<Page>(),
@@ -83,17 +92,31 @@ export async function getPageData(pageId: string): Promise<PageData> {
       'position',
     ),
     byPage<Row>('page_rows', 'id, section_id, position, label, user_id', 'position'),
-    byPage<Cell>('cells', 'row_id, column_id, value'),
   ]);
+  const loaded = check(page);
+  // Which week's answers to show depends on the page, so load them after it.
+  const cells = check(
+    await supabase
+      .from('cells')
+      .select('row_id, column_id, value')
+      .eq('page_id', pageId)
+      .eq('week', cellWeek(loaded, week))
+      .overrideTypes<Cell[], { merge: false }>(),
+  );
 
   return {
-    page: check(page),
+    page: loaded,
     columns: check(columns),
     options: check(options),
     sections: check(sections),
     rows: check(rows),
-    cells: check(cells),
+    cells,
   };
+}
+
+/** The week a page's answers are saved under: `week`, or NO_WEEK if it has no weekly dates. */
+export function cellWeek(page: Pick<Page, 'weekly_dates'>, week: string) {
+  return page.weekly_dates ? week : NO_WEEK;
 }
 
 /**
@@ -115,6 +138,7 @@ export async function createPageFromTemplate(
         template: spec.template,
         column_mode: spec.columnMode,
         auto_members: spec.everyone,
+        weekly_dates: spec.weeklyDates ?? false,
       })
       .select('id')
       .single<{ id: string }>(),
@@ -362,20 +386,47 @@ export async function deletePage(pageId: string) {
   check(await supabase.from('pages').delete().eq('id', pageId));
 }
 
-/** Saves one cell. An empty value clears it. */
-export async function setCell(pageId: string, rowId: string, columnId: string, value: string) {
+/** Saves one cell for one week (NO_WEEK on pages without weekly dates). An empty value clears it. */
+export async function setCell(
+  pageId: string,
+  rowId: string,
+  columnId: string,
+  value: string,
+  week: string = NO_WEEK,
+) {
   if (value === '') {
-    check(await supabase.from('cells').delete().eq('row_id', rowId).eq('column_id', columnId));
+    check(
+      await supabase
+        .from('cells')
+        .delete()
+        .eq('row_id', rowId)
+        .eq('column_id', columnId)
+        .eq('week', week),
+    );
     return;
   }
   check(
     await supabase
       .from('cells')
       .upsert(
-        { page_id: pageId, row_id: rowId, column_id: columnId, value },
-        { onConflict: 'row_id,column_id' },
+        { page_id: pageId, row_id: rowId, column_id: columnId, value, week },
+        { onConflict: 'row_id,column_id,week' },
       ),
   );
+}
+
+/**
+ * Turns "Dates for each week" on or off (Mon–Sun pages, admins only). On
+ * moves the page's current answers into `thisWeek`; off moves `thisWeek`'s
+ * answers back. Other weeks stay saved.
+ */
+export async function setWeeklyDates(pageId: string, turnOn: boolean, thisWeek: string) {
+  const { error } = await supabase.rpc('set_weekly_dates', {
+    pid: pageId,
+    turn_on: turnOn,
+    this_week: thisWeek,
+  });
+  if (error) throw error;
 }
 
 /** Turns "Everyone in every section" on (filling in anyone missing) or off. Admins only. */
