@@ -30,6 +30,8 @@ export type TemplateSpec = {
    * (e.g. rosters), people choose the sections they're in.
    */
   everyone: boolean;
+  /** Mon–Sun pages only: show each week's dates, with fresh answers every week. */
+  weeklyDates?: boolean;
 };
 
 /** How a page's columns are chosen in the page builder. */
@@ -123,6 +125,29 @@ export function formatColumnDate(value: string) {
 export function dateColumnLabel(value: string) {
   const { weekday, day } = formatColumnDate(value);
   return `${day} (${weekday})`;
+}
+
+// --- Weeks ------------------------------------------------------------------
+
+/** The Monday that starts the week containing `date`, as 'YYYY-MM-DD'. */
+export function weekStartOf(date: Date) {
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - weekdayIndex(date));
+  return toDateString(monday);
+}
+
+/** A 'YYYY-MM-DD' date moved by `days` (negative goes back). */
+export function addDays(value: string, days: number) {
+  const date = parseDateString(value);
+  return toDateString(new Date(date.getFullYear(), date.getMonth(), date.getDate() + days));
+}
+
+/** e.g. '9 – 15 Nov', or '30 Nov – 6 Dec' across two months. */
+export function formatWeekRange(weekStart: string) {
+  const start = parseDateString(weekStart);
+  const end = parseDateString(addDays(weekStart, 6));
+  return start.getMonth() === end.getMonth()
+    ? `${start.getDate()} – ${end.getDate()} ${MONTHS[end.getMonth()]}`
+    : `${start.getDate()} ${MONTHS[start.getMonth()]} – ${end.getDate()} ${MONTHS[end.getMonth()]}`;
 }
 
 export type MonthChoice = { year: number; month: number; label: string };

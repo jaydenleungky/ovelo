@@ -90,6 +90,8 @@ export default function NewPageScreen() {
 
   // null = use the template's default (on for meals, off for rosters).
   const [everyoneChoice, setEveryoneChoice] = useState<boolean | null>(null);
+  // Mon–Sun pages: show each week's dates, with fresh answers every week.
+  const [weeklyDates, setWeeklyDates] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,6 +128,7 @@ export default function NewPageScreen() {
       const pageId = await createPageFromTemplate(groupId, title.trim() || defaultTitle, {
         ...spec,
         everyone,
+        weeklyDates: spec.columnMode === 'weekdays' && weeklyDates,
       });
       router.replace(`/pages/${pageId}`);
     } catch (e) {
@@ -253,6 +256,24 @@ export default function NewPageScreen() {
               style={styles.multiline}
             />
           </>
+        )}
+
+        {spec.columnMode === 'weekdays' && (
+          <ThemedView type="backgroundElement" style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <ThemedText type="smallBold">Dates for each week</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {weeklyDates
+                  ? 'Shows this week’s dates. Each week starts empty, and past weeks are kept to look back on.'
+                  : 'The same plan every week, without dates.'}
+              </ThemedText>
+            </View>
+            <Switch
+              value={weeklyDates}
+              onValueChange={setWeeklyDates}
+              accessibilityLabel="Dates for each week"
+            />
+          </ThemedView>
         )}
 
         <ThemedView type="backgroundElement" style={styles.switchRow}>
